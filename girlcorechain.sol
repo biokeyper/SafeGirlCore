@@ -6,6 +6,7 @@ contract SafeGirl {
         string ipfsHash;         // Encrypted report stored on IPFS
         uint256 timestamp;       // Block timestamp when report was submitted
         bool exists;             // Whether report exists for this user
+        string[] responses;      // Responses to predefined questions
     }
 
     struct Consent {
@@ -14,6 +15,7 @@ contract SafeGirl {
         bool active;
     }
 
+    string[] public questions; // Predefined questions for all use cases
     mapping(address => Report) private reports;
     mapping(address => Consent[]) private consentLogs;
 
@@ -21,12 +23,24 @@ contract SafeGirl {
     event ConsentGranted(address indexed reporter, address indexed viewer, uint256 timestamp);
     event ConsentRevoked(address indexed reporter, address indexed viewer, uint256 timestamp);
 
-    /// @notice Submit an encrypted report hash
-    function submitReport(string calldata _ipfsHash) external {
+    constructor() {
+        // Initialize predefined questions
+        questions.push("Do you feel safe right now?");
+        questions.push("Would you like to share what happened?");
+        questions.push("When did the incident happen?");
+        questions.push("Do you want to record this for personal tracking, or to share it later?");
+        questions.push("Do you need urgent medical care, shelter, or support?");
+    }
+
+    /// @notice Submit an encrypted report hash along with responses to predefined questions
+    function submitReport(string calldata _ipfsHash, string[] calldata _responses) external {
+        require(_responses.length == questions.length, "All questions must be answered");
+
         reports[msg.sender] = Report({
             ipfsHash: _ipfsHash,
             timestamp: block.timestamp,
-            exists: true
+            exists: true,
+            responses: _responses
         });
 
         emit ReportSubmitted(msg.sender, block.timestamp, _ipfsHash);
@@ -73,5 +87,10 @@ contract SafeGirl {
     function getMyReport() external view returns (Report memory) {
         require(reports[msg.sender].exists, "No report submitted");
         return reports[msg.sender];
+    }
+
+    /// @notice Get all predefined questions
+    function getQuestions() external view returns (string[] memory) {
+        return questions;
     }
 }
