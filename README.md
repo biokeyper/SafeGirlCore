@@ -11,10 +11,11 @@ The SafeGirl smart contract is a decentralized, survivor-controlled reporting sy
 
 ## Features
 
-* **Encrypted Report Submission**: Survivors submit a tamper-proof IPFS hash of their encrypted report.
+* **Predefined Questions**: Survivors are guided through trauma-informed questions to help them document their experience.
+* **Encrypted Report Submission**: Survivors submit a tamper-proof IPFS hash of their encrypted report along with responses to predefined questions.
 * **Consent Management**: Survivors can grant and revoke access to trusted parties.
 * **Immutable Logging**: All submissions and consent changes are logged on-chain for auditability.
-* **Minimal On-Chain Data**: Only metadata and encrypted hashes are stored to ensure privacy.
+* **Minimal On-Chain Data**: Only metadata, encrypted hashes, and responses are stored to ensure privacy.
 
 ---
 
@@ -27,6 +28,7 @@ struct Report {
     string ipfsHash;
     uint256 timestamp;
     bool exists;
+    string[] responses; // Responses to predefined questions
 }
 
 struct Consent {
@@ -39,6 +41,7 @@ struct Consent {
 ### State Variables
 
 ```solidity
+string[] public questions; // Predefined questions for all use cases
 mapping(address => Report) private reports;
 mapping(address => Consent[]) private consentLogs;
 ```
@@ -47,14 +50,16 @@ mapping(address => Consent[]) private consentLogs;
 
 ## Contract Functions
 
-### `submitReport(string _ipfsHash)`
+### `submitReport(string _ipfsHash, string[] _responses)`
 
-Submits a new encrypted report.
+Submits a new encrypted report along with responses to predefined questions.
 
 * **Access**: Public (only for sender)
 * **Parameters**:
 
   * `_ipfsHash`: Encrypted IPFS hash of the report content.
+  * `_responses`: Array of responses to predefined questions
+* **Validation**: The number of responses must match the number of predefined questions
 * **Events**: `ReportSubmitted`
 
 ### `grantAccess(address _viewer)`
@@ -66,6 +71,12 @@ Grants viewing access to a trusted third party.
 
   * `_viewer`: Wallet address to be granted access.
 * **Events**: `ConsentGranted`
+
+### `getQuestions()`
+Returns the list of predefined questions.
+
+* **Access**: Public
+* **Returns**: Array of strings representing the questions.
 
 ### `revokeAccess(address _viewer)`
 
@@ -130,6 +141,7 @@ event ConsentRevoked(address indexed reporter, address indexed viewer, uint256 t
 * Zero-knowledge proofs for anonymous verification
 * DAO governance for referral partners
 * Smart contract upgradeability using proxy patterns
+* ...
 
 ---
 
