@@ -1,0 +1,28 @@
+{
+  "name": "safegirlcore",
+  "version": "1.0.0",
+  "description": "The chain end of business",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js",
+    "hash": "node utils/hashReport.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "ethers": "^6.16.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
+    "hardhat": "^3.1.5",
+    "hardhat-gas-reporter": "^2.3.0",
+    "solc": "^0.8.19",
+    "solidity-coverage": "^0.8.17"
+  }
+}

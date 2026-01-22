@@ -1,0 +1,9 @@
+{
+  "id": "report_1670000001_b",
+  "createdAt": "2026-01-13T12:05:00.000Z",
+  "type": "mixed",
+  "textSummary": "Recorded account of incident; audio attached.",
+  "audioFilename": "recording_001.m4a",
+  "audioDuration": 42000,
+  "metadata": { "location": "approx", "mood": "scared" }
+}

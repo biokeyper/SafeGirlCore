@@ -9,6 +9,15 @@ The SafeGirl smart contract is a decentralized, survivor-controlled reporting sy
 
 ---
 
+## Hashing Utility (client/back-end parity)
+
+- Canonicalization rules: see [canonical-payload-schema.md](canonical-payload-schema.md). Keys sorted, compact JSON, UTF-8.
+- Fingerprints: SHA-256 (general) and keccak256 (EVM) for the same canonical JSON.
+- CLI: `npm run hash -- test-reports/report1.json both` (omit `both` for sha256 only).
+- Expected outputs: see [test-reports/test-vectors.md](test-reports/test-vectors.md).
+
+---
+
 ## Features
 
 * **Predefined Questions**: Survivors are guided through trauma-informed questions to help them document their experience.
