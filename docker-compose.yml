@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # ========== PostgreSQL Database ==========
+  postgres:
+    image: postgres:15-alpine
+    container_name: safegirl-postgres
+
+    environment:
+      # Database credentials
+      POSTGRES_USER: safegirl_user
+      POSTGRES_PASSWORD: safegirl_password
+      POSTGRES_DB: safegirl_db
+      # Timezone
+      TZ: UTC
+
+    ports:
+      # Expose port 5433 so you can connect from host machine (5432 may be in use)
+      # Format: HOST_PORT:CONTAINER_PORT
+      - "5433:5432"
+
+    volumes:
+      # Persist database data (survives container restart)
+      - postgres_data:/var/lib/postgresql/data
+
+      # Run initialization SQL when container starts
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+    healthcheck:
+      # Check if PostgreSQL is responding
+      test: ["CMD-SHELL", "pg_isready -U safegirl_user -d safegirl_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - safegirl-network
+
+  # ========== Node.js Backend ==========
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    container_name: safegirl-backend
+
+    ports:
+      # Expose port 3001 so frontend can reach backend
+      - "3001:3001"
+
+    environment:
+      # Application settings
+      NODE_ENV: development
+      PORT: 3001
+      LOG_LEVEL: info
+
+      # Database connection
+      # Format: postgres://USER:PASSWORD@HOST:PORT/DATABASE
+      # HOST is 'postgres' (service name) - Docker DNS resolves it
+      DATABASE_URL: postgresql://safegirl_user:safegirl_password@postgres:5432/safegirl_db
+
+      # Blockchain settings - use local hardhat on host machine
+      # When running hardhat locally: npx hardhat node
+      POLYGON_MUMBAI_RPC_URL: http://host.docker.internal:8545
+      PRIVATE_KEY: ${PRIVATE_KEY:-0x0000000000000000000000000000000000000000000000000000000000000000}
+      DEPLOYED_CONTRACT_ADDRESS: ${DEPLOYED_CONTRACT_ADDRESS:-0x0000000000000000000000000000000000000000}
+
+      # IPFS
+      WEB3_STORAGE_TOKEN: ${WEB3_STORAGE_TOKEN:-your_token_here}
+
+      # Server settings
+      MAX_PAYLOAD_SIZE: 10485760
+      REQUEST_TIMEOUT: 30000
+
+    depends_on:
+      postgres:
+        # Wait for postgres to be healthy before starting backend
+        condition: service_healthy
+
+    volumes:
+      # Mount code folder (live reload during development)
+      - ./backend:/app
+
+      # Mount logs folder
+      - ./backend/logs:/app/logs
+
+      # Don't override node_modules (use container's version)
+      - /app/node_modules
+
+    networks:
+      - safegirl-network
+
+    # Restart if crashes
+    restart: unless-stopped
+
+# ========== Volumes ==========
+volumes:
+  postgres_data:
+    driver: local
+
+# ========== Networks ==========
+networks:
+  safegirl-network:
+    driver: bridge
