@@ -1,0 +1,165 @@
+/**
+ * Authentication Routes
+ * OTP-based signup, login, and phone recovery
+ */
+
+const express = require('express');
+const router = express.Router();
+
+const authController = require('../controllers/authController');
+const authMiddleware = require('../middleware/auth');
+const { validateSignup, validateLogin, validateOTP, validatePhoneChange, validateForgotPhone } = require('../middleware/validation');
+
+/**
+ * SIGNUP FLOW
+ */
+
+/**
+ * POST /api/auth/signup/initiate
+ * Step 1: User provides phone + email, receive OTP
+ */
+router.post('/signup/initiate', validateSignup, async (req, res, next) => {
+  try {
+    await authController.initiateSignup(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/signup/verify
+ * Step 2: User enters OTP, account created, receive JWT
+ */
+router.post('/signup/verify', validateOTP, async (req, res, next) => {
+  try {
+    await authController.verifySignup(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * LOGIN FLOW
+ */
+
+/**
+ * POST /api/auth/login/initiate
+ * Step 1: User provides phone, receive OTP
+ */
+router.post('/login/initiate', validateLogin, async (req, res, next) => {
+  try {
+    await authController.initiateLogin(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/login/verify
+ * Step 2: User enters OTP, receive JWT
+ */
+router.post('/login/verify', validateOTP, async (req, res, next) => {
+  try {
+    await authController.verifyLogin(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * ACCOUNT RECOVERY FLOW
+ */
+
+/**
+ * POST /api/auth/forgot-phone
+ * Step 1: User provides email, receive recovery token
+ */
+router.post('/forgot-phone', validateForgotPhone, async (req, res, next) => {
+  try {
+    await authController.forgotPhone(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/verify-recovery
+ * Step 2: User provides recovery token, token verified
+ */
+router.post('/verify-recovery', async (req, res, next) => {
+  try {
+    await authController.verifyRecoveryToken(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/change-phone/recovery
+ * Step 3: User provides new phone, receive OTP on new phone
+ */
+router.post('/change-phone/recovery', async (req, res, next) => {
+  try {
+    await authController.changePhoneViaRecovery(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/verify-phone-change/recovery
+ * Step 4: User enters OTP from new phone, phone changed, receive new JWT
+ */
+router.post('/verify-phone-change/recovery', async (req, res, next) => {
+  try {
+    await authController.verifyPhoneChangeRecovery(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * AUTHENTICATED USER - PHONE CHANGE
+ */
+
+/**
+ * POST /api/auth/change-phone
+ * Step 1: Authenticated user initiates phone change, receive OTP on new phone
+ */
+router.post('/change-phone', authMiddleware, validatePhoneChange, async (req, res, next) => {
+  try {
+    await authController.initiatePhoneChange(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/auth/verify-phone-change
+ * Step 2: Authenticated user enters OTP, phone changed, receive new JWT
+ */
+router.post('/verify-phone-change', authMiddleware, async (req, res, next) => {
+  try {
+    await authController.verifyPhoneChange(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * UTILITY
+ */
+
+/**
+ * GET /api/auth/verify
+ * Verify JWT token is still valid
+ */
+router.get('/verify', authMiddleware, async (req, res, next) => {
+  try {
+    await authController.verifyToken(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+module.exports = router;

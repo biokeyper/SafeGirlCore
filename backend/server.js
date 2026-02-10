@@ -1,11 +1,4 @@
-/**
- * SafeGirl Backend Server
- * Main entry point for the API
- *
- * Usage: npm start
- */
 
-// Load environment variables
 require('dotenv').config();
 
 const express = require('express');
@@ -19,13 +12,13 @@ const ipfsService = require('./services/ipfs');
 const databaseService = require('./services/database');
 
 const reportRoutes = require('./routes/reports');
+const authRoutes = require('./routes/auth');
+const emailService = require('./services/email');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
-// Create Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ========== MIDDLEWARE ==========
 
 // Log all incoming requests
 app.use((req, res, next) => {
@@ -37,17 +30,11 @@ app.use((req, res, next) => {
 app.use(bodyParser.json({ limit: process.env.MAX_PAYLOAD_SIZE || '10mb' }));
 app.use(bodyParser.text());
 
-// Enable CORS (allow frontend to call backend)
 app.use(cors({
-  origin: '*', // Change to specific domain in production: 'https://example.com'
+  origin: '*', 
   credentials: true
 }));
 
-// ========== INITIALIZE SERVICES ==========
-
-/**
- * Initialize all services before starting server
- */
 async function initializeServices() {
   try {
     logger.logServer('Initializing services...');
@@ -73,7 +60,14 @@ async function initializeServices() {
       logger.warn('SERVER', 'Database initialization warning - submissions will not be persisted');
     }
 
-    // 4. Start event listener
+    // 4. Initialize Email Service
+    logger.logServer('Initializing email service...');
+    const emailInitialized = await emailService.initialize();
+    if (!emailInitialized) {
+      logger.warn('SERVER', 'Email service not initialized - recovery emails will not be sent');
+    }
+
+    // 5. Start event listener
     logger.logServer('Starting event listener...');
     await eventListener.startListening();
 
@@ -87,12 +81,10 @@ async function initializeServices() {
   }
 }
 
-// ========== ROUTES ==========
 
-// API Routes
 app.use('/api', reportRoutes);
+app.use('/api/auth', authRoutes);
 
-// Root endpoint
 app.get('/', (req, res) => {
   logger.logRequest('GET', '/');
   res.json({
@@ -100,26 +92,25 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     status: 'running',
     endpoints: {
-      health: 'GET /api/health',
-      submitReport: 'POST /api/submitReport',
-      reportStatus: 'GET /api/reportStatus'
+      auth: {
+        signup: 'POST /api/auth/signup',
+        login: 'POST /api/auth/login',
+        verify: 'GET /api/auth/verify (protected)'
+      },
+      reports: {
+        submit: 'POST /api/submitReport',
+        status: 'GET /api/reportStatus',
+        health: 'GET /api/health'
+      }
     }
   });
 });
 
-// ========== ERROR HANDLING ==========
 
-// 404 handler (must be before global error handler)
 app.use(notFoundHandler);
 
-// Global error handler (must be last)
 app.use(errorHandler);
 
-// ========== START SERVER ==========
-
-/**
- * Start the server
- */
 async function startServer() {
   try {
     // Initialize services
@@ -137,9 +128,23 @@ async function startServer() {
       });
 
       logger.logServer('API Endpoints:');
-      logger.logServer('  POST   /api/submitReport  - Submit encrypted report');
-      logger.logServer('  GET    /api/reportStatus  - Check report status');
-      logger.logServer('  GET    /api/health        - Health check');
+      logger.logServer('  AUTH (OTP-based):');
+      logger.logServer('    POST   /api/auth/signup/initiate        - Signup Step 1: Send OTP');
+      logger.logServer('    POST   /api/auth/signup/verify          - Signup Step 2: Verify OTP');
+      logger.logServer('    POST   /api/auth/login/initiate         - Login Step 1: Send OTP');
+      logger.logServer('    POST   /api/auth/login/verify           - Login Step 2: Verify OTP');
+      logger.logServer('    POST   /api/auth/forgot-phone           - Recovery Step 1: Send token');
+      logger.logServer('    POST   /api/auth/verify-recovery        - Recovery Step 2: Verify token');
+      logger.logServer('    POST   /api/auth/change-phone/recovery  - Recovery Step 3: Send OTP');
+      logger.logServer('    POST   /api/auth/verify-phone-change/recovery - Recovery Step 4: Verify');
+      logger.logServer('    POST   /api/auth/change-phone           - Change phone (authenticated)');
+      logger.logServer('    POST   /api/auth/verify-phone-change    - Verify phone change');
+      logger.logServer('    GET    /api/auth/verify                 - Verify token (protected)');
+      logger.logServer('');
+      logger.logServer('  REPORTS:');
+      logger.logServer('    POST   /api/submitReport  - Submit encrypted report');
+      logger.logServer('    GET    /api/reportStatus  - Check report status');
+      logger.logServer('    GET    /api/health        - Health check');
       logger.logServer('');
       logger.logServer('Logs saved to: backend/logs/');
     });

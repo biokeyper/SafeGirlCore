@@ -60,8 +60,9 @@ services:
       DATABASE_URL: postgresql://safegirl_user:safegirl_password@postgres:5432/safegirl_db
 
       # Blockchain settings - use local hardhat on host machine
-      # When running hardhat locally: npx hardhat node
-      POLYGON_MUMBAI_RPC_URL: http://host.docker.internal:8545
+      # When running hardhat locally: npx hardhat node --hostname 0.0.0.0
+      # Docker gateway on Linux is 172.17.0.1
+      POLYGON_MUMBAI_RPC_URL: http://172.17.0.1:8545
       PRIVATE_KEY: ${PRIVATE_KEY:-0x0000000000000000000000000000000000000000000000000000000000000000}
       DEPLOYED_CONTRACT_ADDRESS: ${DEPLOYED_CONTRACT_ADDRESS:-0x0000000000000000000000000000000000000000}
 

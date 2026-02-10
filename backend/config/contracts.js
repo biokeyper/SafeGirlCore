@@ -3,7 +3,9 @@
  * Contains ABI, address, and ethers.js setup
  */
 // the bridge between  my node backend and the smart contract on the blockchain. it sets up the connection to the blockchain and tells ethers.js how to talk to my safegirl contracr
-
+//its like the provider;connection to read blaockchain data 
+//signer;my backend's wallet that pays for transactions
+//contract ; the interface to call smart contract fucntions 
 const { ethers } = require('ethers');
 const logger = require('../utils/logger');
 
@@ -80,6 +82,46 @@ const SAFEGIRL_ABI = [
     ],
     name: 'ReportSubmitted',
     type: 'event'
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'reporter', type: 'address' },
+      { indexed: false, name: 'timestamp', type: 'uint256' },
+      { indexed: false, name: 'newIpfsHash', type: 'string' },
+      { indexed: false, name: 'version', type: 'uint256' }
+    ],
+    name: 'ReportUpdated',
+    type: 'event'
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'reporter', type: 'address' },
+      { indexed: true, name: 'viewer', type: 'address' },
+      { indexed: false, name: 'expiresAt', type: 'uint256' }
+    ],
+    name: 'ConsentGranted',
+    type: 'event'
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'reporter', type: 'address' },
+      { indexed: true, name: 'viewer', type: 'address' }
+    ],
+    name: 'ConsentRevoked',
+    type: 'event'
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'sender', type: 'address' },
+      { indexed: false, name: 'timestamp', type: 'uint256' },
+      { indexed: false, name: 'locationData', type: 'string' }
+    ],
+    name: 'PanicAlert',
+    type: 'event'
   }
 ];
 
@@ -89,7 +131,8 @@ class ContractManager { //class that manages the block chain connection
     this.signer = null;
     this.contract = null;
     this.contractAddress = process.env.DEPLOYED_CONTRACT_ADDRESS;
-    this.rpcUrl = process.env.POLYGON_MUMBAI_RPC_URL;
+    // Use Polygon Amoy (Mumbai is deprecated)
+    this.rpcUrl = process.env.POLYGON_AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology/';
     this.privateKey = process.env.PRIVATE_KEY;
   }
 
@@ -106,7 +149,7 @@ class ContractManager { //class that manages the block chain connection
       const network = await this.provider.getNetwork();
       logger.success('CONFIG', 'Connected to blockchain', {
         network: network.name,
-        chainId: network.chainId
+        chainId: Number(network.chainId)  // Convert BigInt to number for logging
       });
 
       // Create signer (backend's wallet for paying gas)

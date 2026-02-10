@@ -66,45 +66,6 @@ class BlockchainService {
   }
 
   /**
-   * Update an existing report
-   * @param {string} newIpfsHash - New IPFS hash
-   * @param {string[]} newResponses - Updated responses
-   * @returns {Promise<object>} Transaction details
-   */
-  async updateReport(newIpfsHash, newResponses) {
-    try {
-      logger.logBlockchain('Update Report', 'pending', {
-        newIpfsHash,
-        responseCount: newResponses.length
-      });
-
-      const contract = contractManager.getContract();
-      const tx = await contract.updateReport(newIpfsHash, newResponses);
-
-      logger.info('BLOCKCHAIN', 'Update transaction sent', { txHash: tx.hash });
-
-      const receipt = await tx.wait(1);
-
-      logger.logBlockchain('Update Report', 'success', {
-        txHash: receipt.hash,
-        blockNumber: receipt.blockNumber
-      });
-
-      return {
-        success: true,
-        txHash: receipt.hash,
-        blockNumber: receipt.blockNumber,
-        gasUsed: receipt.gasUsed.toString()
-      };
-    } catch (error) {
-      logger.logBlockchain('Update Report', 'error', {
-        error: error.message
-      });
-      throw error;
-    }
-  }
-
-  /**
    * Grant access to a viewer
    * @param {string} viewerAddress - Viewer's wallet address
    * @param {number} customExpiry - Custom expiry in seconds (0 for default)

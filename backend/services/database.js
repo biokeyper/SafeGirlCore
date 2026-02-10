@@ -1,14 +1,104 @@
 /**
  * Database Service
  * Handles all PostgreSQL queries for submissions
+ * Includes encryption/decryption of sensitive data
  */
 
 const logger = require('../utils/logger');
+const crypto = require('crypto');
 
 class DatabaseService {
   constructor() {
     this.pool = null;
     this.isConnected = false;
+    // Master encryption key from environment
+    // Should be stored securely (AWS Secrets Manager, HashiCorp Vault, etc.)
+    this.masterKey = process.env.DB_ENCRYPTION_KEY;
+
+    if (!this.masterKey) {
+      logger.warn('DATABASE', 'DB_ENCRYPTION_KEY not set - encryption disabled');
+    }
+  }
+
+  /**
+   * Derive encryption key from userId + master key
+   * Each user gets unique encryption key
+   * @private
+   */
+  deriveUserKey(userId) {
+    if (!this.masterKey) {
+      return null;
+    }
+
+    // Create unique key for each user
+    // Hash(masterKey + userId) = user-specific encryption key
+    return crypto
+      .createHmac('sha256', this.masterKey)
+      .update(userId.toString())
+      .digest();
+  }
+
+  /**
+   * Encrypt sensitive data using userId-based key
+   * @private
+   */
+  encrypt(data, userId) {
+    try {
+      if (!this.masterKey || !data) {
+        return data; // If no key, return plaintext (fallback)
+      }
+
+      const userKey = this.deriveUserKey(userId);
+      const iv = crypto.randomBytes(16);
+      const cipher = crypto.createCipheriv('aes-256-cbc', userKey, iv);
+
+      let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+
+      // Return: iv + encrypted data (iv needed for decryption)
+      return `${iv.toString('hex')}:${encrypted}`;
+    } catch (error) {
+      logger.error('DATABASE', 'Encryption failed', {
+        error: error.message,
+        userId
+      });
+      return data; // Fallback to plaintext on error
+    }
+  }
+
+  /**
+   * Decrypt sensitive data using userId-based key
+   * @private
+   */
+  decrypt(encryptedData, userId) {
+    try {
+      if (!this.masterKey || !encryptedData) {
+        return encryptedData;
+      }
+
+      // Extract iv and encrypted data
+      const [ivHex, encrypted] = encryptedData.split(':');
+      if (!ivHex || !encrypted) {
+        // Data not encrypted, return as-is
+        return encryptedData;
+      }
+
+      const userKey = this.deriveUserKey(userId);
+      const iv = Buffer.from(ivHex, 'hex');
+      const decipher = crypto.createDecipheriv('aes-256-cbc', userKey, iv);
+
+      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+
+      return JSON.parse(decrypted);
+    } catch (error) {
+      logger.error('DATABASE', 'Decryption failed', {
+        error: error.message,
+        userId
+      });
+      // Return encrypted data if decryption fails (something is wrong)
+      return encryptedData;
+    }
   }
 
   /**
@@ -55,7 +145,7 @@ class DatabaseService {
 
   /**
    * Save a new submission
-   * @param {object} submission - { reportId, txHash, ipfsHash, responses, blockNumber, gasUsed }
+   * @param {object} submission - { reportId, txHash, ipfsHash, responses, blockNumber, gasUsed, userId }
    * @returns {Promise<object>} Saved record
    */
   async saveSubmission(submission) {
@@ -71,10 +161,18 @@ class DatabaseService {
         responses,
         blockNumber,
         gasUsed,
-        metadata = null
+        metadata = null,
+        userId = null // Extract userId for encryption
       } = submission;
 
       logger.info('DATABASE', 'Saving submission', { reportId });
+
+      // ========== ENCRYPT SENSITIVE DATA ==========
+      // Encrypt responses and metadata using userId-based key
+      const encryptedResponses = this.encrypt(responses, userId || reportId);
+      const encryptedMetadata = this.encrypt(metadata, userId || reportId);
+
+      logger.debug('DATABASE', 'Sensitive data encrypted before storage', { reportId });
 
       const query = `
         INSERT INTO submissions (
@@ -89,14 +187,14 @@ class DatabaseService {
         reportId,
         txHash,
         ipfsHash,
-        responses, // PostgreSQL array type
+        encryptedResponses, // Encrypted before storing
         blockNumber,
         gasUsed,
         'pending', // Initial status
-        metadata ? JSON.stringify(metadata) : null
+        encryptedMetadata ? JSON.stringify(encryptedMetadata) : null
       ]);
 
-      logger.success('DATABASE', 'Submission saved', { reportId });
+      logger.success('DATABASE', 'Submission saved (encrypted)', { reportId });
       return result.rows[0];
 
     } catch (error) {
@@ -111,9 +209,10 @@ class DatabaseService {
   /**
    * Get submission by reportId
    * @param {string} reportId - Report ID
-   * @returns {Promise<object>} Submission record or null
+   * @param {string} userId - User ID for decryption (optional, defaults to reportId)
+   * @returns {Promise<object>} Submission record with decrypted data or null
    */
-  async getSubmission(reportId) {
+  async getSubmission(reportId, userId = null) {
     try {
       if (!this.isConnected) {
         throw new Error('Database not initialized');
@@ -129,8 +228,22 @@ class DatabaseService {
         return null;
       }
 
-      logger.success('DATABASE', 'Submission retrieved', { reportId });
-      return result.rows[0];
+      let submission = result.rows[0];
+
+      // ========== DECRYPT SENSITIVE DATA ==========
+      // Decrypt responses and metadata using userId-based key
+      const decryptionUserId = userId || reportId;
+
+      if (submission.responses) {
+        submission.responses = this.decrypt(submission.responses, decryptionUserId);
+      }
+
+      if (submission.metadata) {
+        submission.metadata = this.decrypt(submission.metadata, decryptionUserId);
+      }
+
+      logger.success('DATABASE', 'Submission retrieved (decrypted)', { reportId });
+      return submission;
 
     } catch (error) {
       logger.error('DATABASE', 'Failed to get submission', {
@@ -213,8 +326,8 @@ class DatabaseService {
 
   /**
    * Get all submissions with optional filters
-   * @param {object} filters - { status, limit, offset }
-   * @returns {Promise<array>} Array of submissions
+   * @param {object} filters - { status, limit, offset, userId }
+   * @returns {Promise<array>} Array of submissions with decrypted data
    */
   async getSubmissions(filters = {}) {
     try {
@@ -222,7 +335,7 @@ class DatabaseService {
         throw new Error('Database not initialized');
       }
 
-      const { status = null, limit = 50, offset = 0 } = filters;
+      const { status = null, limit = 50, offset = 0, userId = null } = filters;
 
       logger.debug('DATABASE', 'Fetching submissions', { status, limit, offset });
 
@@ -239,12 +352,23 @@ class DatabaseService {
 
       const result = await this.pool.query(query, params);
 
-      logger.success('DATABASE', 'Submissions retrieved', {
-        count: result.rows.length,
+      // ========== DECRYPT SENSITIVE DATA ==========
+      const submissions = result.rows.map(submission => {
+        if (submission.responses) {
+          submission.responses = this.decrypt(submission.responses, userId || submission.reportId);
+        }
+        if (submission.metadata) {
+          submission.metadata = this.decrypt(submission.metadata, userId || submission.reportId);
+        }
+        return submission;
+      });
+
+      logger.success('DATABASE', 'Submissions retrieved (decrypted)', {
+        count: submissions.length,
         status
       });
 
-      return result.rows;
+      return submissions;
 
     } catch (error) {
       logger.error('DATABASE', 'Failed to fetch submissions', {
@@ -281,6 +405,224 @@ class DatabaseService {
 
     } catch (error) {
       logger.error('DATABASE', 'Failed to get stats', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Log a change to the audit trail
+   * @param {string} reportId - Report ID
+   * @param {string} fieldChanged - Field that changed
+   * @param {string} oldValue - Previous value
+   * @param {string} newValue - New value
+   * @param {string} changeReason - Why it changed (api_update, blockchain_sync, tampering_detected)
+   * @param {string} changedBy - Who made the change (system, api, background_job)
+   */
+  async logAudit(reportId, fieldChanged, oldValue, newValue, changeReason = 'unknown', changedBy = 'system') {
+    try {
+      if (!this.isConnected) {
+        logger.warn('DATABASE', 'Cannot log audit - not connected');
+        return;
+      }
+
+      const query = `
+        INSERT INTO submission_audit_log
+        (reportId, fieldChanged, oldValue, newValue, changeReason, changedBy)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `;
+
+      await this.pool.query(query, [
+        reportId,
+        fieldChanged,
+        oldValue?.toString() || null,
+        newValue?.toString() || null,
+        changeReason,
+        changedBy
+      ]);
+
+      logger.debug('DATABASE', 'Audit logged', {
+        reportId,
+        field: fieldChanged,
+        reason: changeReason
+      });
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to log audit', {
+        error: error.message,
+        reportId
+      });
+    }
+  }
+
+  /**
+   * Record a tampering alert
+   * @param {string} reportId - Report ID
+   * @param {string} dbValue - Value in database
+   * @param {string} blockchainValue - Value on blockchain
+   */
+  async logTamperingAlert(reportId, dbValue, blockchainValue) {
+    try {
+      if (!this.isConnected) {
+        logger.warn('DATABASE', 'Cannot log tampering alert - not connected');
+        return;
+      }
+
+      const query = `
+        INSERT INTO tampering_alerts
+        (reportId, dbValue, blockchainValue, correctionApplied)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (reportId) DO UPDATE
+        SET dbValue = $2, blockchainValue = $3, detectedAt = CURRENT_TIMESTAMP
+      `;
+
+      await this.pool.query(query, [
+        reportId,
+        dbValue,
+        blockchainValue,
+        false
+      ]);
+
+      logger.error('DATABASE', 'TAMPERING ALERT LOGGED', {
+        reportId,
+        dbValue,
+        blockchainValue
+      });
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to log tampering alert', {
+        error: error.message,
+        reportId
+      });
+    }
+  }
+
+  /**
+   * Mark tampering alert as corrected
+   * @param {string} reportId - Report ID
+   */
+  async markAlertCorrected(reportId) {
+    try {
+      if (!this.isConnected) {
+        logger.warn('DATABASE', 'Cannot update alert - not connected');
+        return;
+      }
+
+      const query = `
+        UPDATE tampering_alerts
+        SET correctionApplied = TRUE, correctedAt = CURRENT_TIMESTAMP
+        WHERE reportId = $1
+      `;
+
+      await this.pool.query(query, [reportId]);
+
+      logger.info('DATABASE', 'Tampering alert marked as corrected', { reportId });
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to mark alert corrected', {
+        error: error.message,
+        reportId
+      });
+    }
+  }
+
+  /**
+   * Get audit history for a report
+   * @param {string} reportId - Report ID
+   * @returns {Promise<array>} Audit entries
+   */
+  async getAuditHistory(reportId) {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const query = `
+        SELECT * FROM submission_audit_log
+        WHERE reportId = $1
+        ORDER BY changedAt DESC
+      `;
+
+      const result = await this.pool.query(query, [reportId]);
+      return result.rows;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get audit history', {
+        error: error.message,
+        reportId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Archive a report (hide from list but keep for blockchain verification)
+   * @param {string} reportId - Report ID to archive
+   * @param {string} reason - Reason for archival
+   * @returns {Promise<object>} Archived submission
+   */
+  async archiveReport(reportId, reason = null) {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      logger.info('DATABASE', 'Archiving report', { reportId, reason });
+
+      const query = `
+        UPDATE submissions
+        SET isArchived = TRUE,
+            archivedAt = CURRENT_TIMESTAMP,
+            archivedReason = $2,
+            updatedAt = CURRENT_TIMESTAMP
+        WHERE reportId = $1
+        RETURNING *;
+      `;
+
+      const result = await this.pool.query(query, [reportId, reason || null]);
+
+      if (result.rows.length === 0) {
+        logger.warn('DATABASE', 'Report not found for archival', { reportId });
+        return null;
+      }
+
+      logger.success('DATABASE', 'Report archived', { reportId, reason });
+
+      // Log the archival
+      await this.logAudit(
+        reportId,
+        'isArchived',
+        'false',
+        'true',
+        'user_archive',
+        'api'
+      );
+
+      return result.rows[0];
+
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to archive report', {
+        error: error.message,
+        reportId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Execute arbitrary SQL query
+   * Used for authentication and other operations
+   * @param {string} query - SQL query string
+   * @param {array} params - Query parameters (for parameterized queries)
+   * @returns {Promise<object>} Query result object
+   */
+  async query(sql, params = []) {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.pool.query(sql, params);
+      return result;
+    } catch (error) {
+      logger.error('DATABASE', 'Query execution failed', {
         error: error.message
       });
       throw error;
