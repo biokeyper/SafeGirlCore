@@ -13,6 +13,11 @@ const databaseService = require('./services/database');
 
 const reportRoutes = require('./routes/reports');
 const authRoutes = require('./routes/auth');
+const accessRoutes = require('./routes/access');
+const panicRoutes = require('./routes/panic');
+const keyRoutes = require('./routes/keys');
+const searchRoutes = require('./routes/search');
+const notificationRoutes = require('./routes/notifications');
 const emailService = require('./services/email');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
@@ -84,6 +89,11 @@ async function initializeServices() {
 
 app.use('/api', reportRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/access', accessRoutes);
+app.use('/api/panic-alert', panicRoutes);
+app.use('/api/keys', keyRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
   logger.logRequest('GET', '/');
@@ -142,9 +152,36 @@ async function startServer() {
       logger.logServer('    GET    /api/auth/verify                 - Verify token (protected)');
       logger.logServer('');
       logger.logServer('  REPORTS:');
-      logger.logServer('    POST   /api/submitReport  - Submit encrypted report');
-      logger.logServer('    GET    /api/reportStatus  - Check report status');
-      logger.logServer('    GET    /api/health        - Health check');
+      logger.logServer('    POST   /api/submitReport            - Submit report (backend encrypts)');
+      logger.logServer('    GET    /api/reportStatus            - Check report status');
+      logger.logServer('    GET    /api/report/:reportId/decrypt - Decrypt and view report (protected)');
+      logger.logServer('    GET    /api/health                  - Health check');
+      logger.logServer('');
+      logger.logServer('  ACCESS (Report Sharing - Protected):');
+      logger.logServer('    POST   /api/access/grant                     - Grant access to a report');
+      logger.logServer('    POST   /api/access/revoke                    - Revoke access from a report');
+      logger.logServer('    GET    /api/access/shared-with-me            - Get reports shared with me');
+      logger.logServer('    GET    /api/access/my-report/:reportId/viewers - Get viewers of my report');
+      logger.logServer('    GET    /api/access/report/:reportId          - View a shared report');
+      logger.logServer('');
+      logger.logServer('  PANIC ALERTS (Protected - Rate Limited):');
+      logger.logServer('    POST   /api/panic-alert                      - Send emergency panic alert');
+      logger.logServer('    GET    /api/panic-alert/history              - Get panic alert history');
+      logger.logServer('');
+      logger.logServer('  KEY RECOVERY:');
+      logger.logServer('    POST   /api/keys/backup                      - Backup encryption key with PIN (protected)');
+      logger.logServer('    POST   /api/keys/recover                     - Recover key using PIN + phone (rate limited)');
+      logger.logServer('');
+      logger.logServer('  SEARCH & FILTERING (Protected):');
+      logger.logServer('    GET    /api/search/reports                   - Search/filter reports');
+      logger.logServer('    GET    /api/search/stats                     - Get report statistics');
+      logger.logServer('');
+      logger.logServer('  NOTIFICATIONS (Protected):');
+      logger.logServer('    GET    /api/notifications                    - Get notifications');
+      logger.logServer('    GET    /api/notifications/unread/count       - Get unread count');
+      logger.logServer('    POST   /api/notifications/:id/read           - Mark as read');
+      logger.logServer('    POST   /api/notifications/mark-all-read      - Mark all as read');
+      logger.logServer('    DELETE /api/notifications/:id                - Delete notification');
       logger.logServer('');
       logger.logServer('Logs saved to: backend/logs/');
     });

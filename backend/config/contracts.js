@@ -71,6 +71,14 @@ const SAFEGIRL_ABI = [
     stateMutability: 'view',
     type: 'function'
   },
+  // sendPanicAlert(string locationData)
+  {
+    inputs: [{ name: '_locationData', type: 'string' }],
+    name: 'sendPanicAlert',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
   // Events
   {
     anonymous: false,

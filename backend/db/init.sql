@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS submissions (
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   confirmedAt TIMESTAMP,
 
+  -- Encryption keys (for backend-side decryption)
+  encryptionKey VARCHAR(255),           -- Encrypted report key (hex)
+  encryptionKeyIv VARCHAR(255),         -- IV for key encryption (hex)
+  encryptionKeyAuthTag VARCHAR(255),    -- Auth tag for key encryption (hex)
+  encryptionDataIv VARCHAR(255),        -- IV for data encryption (hex)
+  encryptionDataAuthTag VARCHAR(255),   -- Auth tag for data encryption (hex)
+
   -- Archival (for privacy, but keeps blockchain record intact)
   isArchived BOOLEAN DEFAULT FALSE,
   archivedAt TIMESTAMP,
@@ -196,6 +203,85 @@ CREATE INDEX idx_recovery_token ON recovery_tokens(token);
 CREATE INDEX idx_recovery_userId ON recovery_tokens(userId);
 CREATE INDEX idx_recovery_expires ON recovery_tokens(expires_at);
 
+-- ========== NOTIFICATIONS TABLE ==========
+-- Tracks all notifications for users
+CREATE TABLE IF NOT EXISTS notifications (
+  id SERIAL PRIMARY KEY,
+  userId VARCHAR(255) NOT NULL,
+  type VARCHAR(50) NOT NULL,              -- 'access_granted', 'panic_alert', 'report_submitted', etc
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  relatedId VARCHAR(255),                 -- reportId, accessId, etc
+  isRead BOOLEAN DEFAULT FALSE,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  readAt TIMESTAMP,
+
+  FOREIGN KEY (userId) REFERENCES users(userId)
+);
+
+CREATE INDEX idx_notification_userId ON notifications(userId);
+CREATE INDEX idx_notification_isRead ON notifications(isRead, userId);
+CREATE INDEX idx_notification_createdAt ON notifications(createdAt DESC);
+CREATE INDEX idx_notification_type ON notifications(type, userId);
+
+-- ========== PANIC ALERTS TABLE ==========
+-- Tracks emergency panic alerts sent by users
+CREATE TABLE IF NOT EXISTS panic_alerts (
+  id SERIAL PRIMARY KEY,
+  userId VARCHAR(255) NOT NULL,
+  walletAddress VARCHAR(255),
+  locationData VARCHAR(500) NOT NULL,
+  txHash VARCHAR(255) UNIQUE NOT NULL,
+  blockNumber BIGINT,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (userId) REFERENCES users(userId)
+);
+
+CREATE INDEX idx_panic_userId ON panic_alerts(userId);
+CREATE INDEX idx_panic_createdAt ON panic_alerts(createdAt DESC);
+
+-- ========== KEY RECOVERY TABLE ==========
+-- Stores encrypted backup of encryption keys for recovery
+CREATE TABLE IF NOT EXISTS key_backups (
+  id SERIAL PRIMARY KEY,
+  userId VARCHAR(255) NOT NULL UNIQUE,
+  encryptedKey VARCHAR(255) NOT NULL,        -- Backup key encrypted with PIN
+  keyIv VARCHAR(255) NOT NULL,               -- IV for key encryption
+  keyAuthTag VARCHAR(255) NOT NULL,          -- Auth tag for key encryption
+  pinHash VARCHAR(255) NOT NULL,             -- Hashed PIN (SHA-256)
+  backupCreatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  lastRecoveryAttempt TIMESTAMP,
+  recoveryAttempts INT DEFAULT 0,
+
+  FOREIGN KEY (userId) REFERENCES users(userId)
+);
+
+CREATE INDEX idx_backup_userId ON key_backups(userId);
+CREATE INDEX idx_backup_createdAt ON key_backups(backupCreatedAt DESC);
+
+-- ========== REPORT ACCESS TABLE ==========
+-- Tracks who has access to which reports (for sharing)
+CREATE TABLE IF NOT EXISTS report_access (
+  id SERIAL PRIMARY KEY,
+  reportId VARCHAR(255) NOT NULL,
+  reporterId VARCHAR(255) NOT NULL,          -- User who submitted the report
+  viewerId VARCHAR(255) NOT NULL,            -- User who has been granted access
+  grantedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expiresAt TIMESTAMP,                       -- Optional expiry time
+  isActive BOOLEAN DEFAULT TRUE,             -- Track if access is still valid
+  revokedAt TIMESTAMP,                       -- When access was revoked
+
+  FOREIGN KEY (reportId) REFERENCES submissions(reportId),
+  UNIQUE(reportId, reporterId, viewerId)     -- One access per (report, reporter, viewer) combo
+);
+
+-- Create indexes for fast lookups
+CREATE INDEX idx_access_reportId ON report_access(reportId);
+CREATE INDEX idx_access_viewerId ON report_access(viewerId);
+CREATE INDEX idx_access_reporterId ON report_access(reporterId);
+CREATE INDEX idx_access_active ON report_access(isActive, viewerId);
+
 -- Grant permissions to application user
 GRANT SELECT, INSERT, UPDATE ON submissions TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE submissions_id_seq TO safegirl_user;
@@ -211,3 +297,11 @@ GRANT SELECT, INSERT, UPDATE ON otps TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE otps_id_seq TO safegirl_user;
 GRANT SELECT, INSERT, UPDATE ON recovery_tokens TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE recovery_tokens_id_seq TO safegirl_user;
+GRANT SELECT, INSERT, UPDATE ON report_access TO safegirl_user;
+GRANT USAGE, SELECT ON SEQUENCE report_access_id_seq TO safegirl_user;
+GRANT SELECT, INSERT ON panic_alerts TO safegirl_user;
+GRANT USAGE, SELECT ON SEQUENCE panic_alerts_id_seq TO safegirl_user;
+GRANT SELECT, INSERT, UPDATE ON notifications TO safegirl_user;
+GRANT USAGE, SELECT ON SEQUENCE notifications_id_seq TO safegirl_user;
+GRANT SELECT, INSERT, UPDATE ON key_backups TO safegirl_user;
+GRANT USAGE, SELECT ON SEQUENCE key_backups_id_seq TO safegirl_user;

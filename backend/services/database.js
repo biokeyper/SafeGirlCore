@@ -162,24 +162,27 @@ class DatabaseService {
         blockNumber,
         gasUsed,
         metadata = null,
-        userId = null // Extract userId for encryption
+        userId = null,
+        // Backend encryption fields
+        encryptionKey = null,
+        encryptionKeyIv = null,
+        encryptionKeyAuthTag = null,
+        encryptionDataIv = null,
+        encryptionDataAuthTag = null
       } = submission;
 
       logger.info('DATABASE', 'Saving submission', { reportId });
 
-      // ========== ENCRYPT SENSITIVE DATA ==========
-      // Encrypt responses and metadata using userId-based key
-      const encryptedResponses = this.encrypt(responses, userId || reportId);
-      const encryptedMetadata = this.encrypt(metadata, userId || reportId);
-
-      logger.debug('DATABASE', 'Sensitive data encrypted before storage', { reportId });
-
+      // Note: Payload is now encrypted by encryption service
+      // Store encryption key info for decryption later
       const query = `
         INSERT INTO submissions (
           reportId, txHash, ipfsHash, responses,
-          blockNumber, gasUsed, status, metadata
+          blockNumber, gasUsed, status, metadata,
+          encryptionKey, encryptionKeyIv, encryptionKeyAuthTag,
+          encryptionDataIv, encryptionDataAuthTag
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *;
       `;
 
@@ -187,14 +190,19 @@ class DatabaseService {
         reportId,
         txHash,
         ipfsHash,
-        encryptedResponses, // Encrypted before storing
+        responses ? JSON.stringify(responses) : null,
         blockNumber,
         gasUsed,
         'pending', // Initial status
-        encryptedMetadata ? JSON.stringify(encryptedMetadata) : null
+        metadata ? JSON.stringify(metadata) : null,
+        encryptionKey,
+        encryptionKeyIv,
+        encryptionKeyAuthTag,
+        encryptionDataIv,
+        encryptionDataAuthTag
       ]);
 
-      logger.success('DATABASE', 'Submission saved (encrypted)', { reportId });
+      logger.success('DATABASE', 'Submission saved with encryption keys', { reportId });
       return result.rows[0];
 
     } catch (error) {
@@ -207,12 +215,13 @@ class DatabaseService {
   }
 
   /**
-   * Get submission by reportId
+   * Get submission by reportId with decryption
    * @param {string} reportId - Report ID
-   * @param {string} userId - User ID for decryption (optional, defaults to reportId)
-   * @returns {Promise<object>} Submission record with decrypted data or null
+   * @param {string} userId - User ID (optional for access checking)
+   * @param {boolean} decrypt - Whether to decrypt the payload (default false)
+   * @returns {Promise<object>} Submission record or null
    */
-  async getSubmission(reportId, userId = null) {
+  async getSubmission(reportId, userId = null, decrypt = false) {
     try {
       if (!this.isConnected) {
         throw new Error('Database not initialized');
@@ -603,6 +612,579 @@ class DatabaseService {
         reportId
       });
       throw error;
+    }
+  }
+
+  /**
+   * Grant access to a report for another user
+   * @param {object} accessData - {reportId, reporterId, viewerId, expiresAt, txHash}
+   * @returns {Promise<object>} Access record
+   */
+  async grantAccess(accessData) {
+    try {
+      const { reportId, reporterId, viewerId, expiresAt, txHash } = accessData;
+
+      const result = await this.query(
+        `INSERT INTO report_access (reportId, reporterId, viewerId, expiresAt, isActive)
+         VALUES ($1, $2, $3, $4, TRUE)
+         RETURNING id, reportId, viewerId, grantedAt, expiresAt, isActive`,
+        [reportId, reporterId, viewerId, expiresAt]
+      );
+
+      logger.success('DATABASE', 'Access granted', {
+        reportId,
+        viewerId,
+        txHash
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to grant access', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Revoke access to a report
+   * @param {string} reportId - Report ID
+   * @param {string} viewerId - User ID to revoke from
+   * @param {string} txHash - Transaction hash
+   * @returns {Promise<object>} Updated access record
+   */
+  async revokeAccess(reportId, viewerId, txHash) {
+    try {
+      const result = await this.query(
+        `UPDATE report_access
+         SET isActive = FALSE, revokedAt = CURRENT_TIMESTAMP
+         WHERE reportId = $1 AND viewerId = $2 AND isActive = TRUE
+         RETURNING id, reportId, viewerId, revokedAt, isActive`,
+        [reportId, viewerId]
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error('Access record not found or already revoked');
+      }
+
+      logger.success('DATABASE', 'Access revoked', {
+        reportId,
+        viewerId,
+        txHash
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to revoke access', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all reports shared with a specific user
+   * @param {string} viewerId - User ID
+   * @returns {Promise<array>} Array of shared reports
+   */
+  async getSharedReports(viewerId) {
+    try {
+      const result = await this.query(
+        `SELECT ra.reportId, ra.reporterId, ra.grantedAt, ra.expiresAt, ra.isActive
+         FROM report_access ra
+         WHERE ra.viewerId = $1 AND ra.isActive = TRUE
+         ORDER BY ra.grantedAt DESC`,
+        [viewerId]
+      );
+
+      logger.success('DATABASE', 'Retrieved shared reports', {
+        viewerId,
+        count: result.rows.length
+      });
+
+      return result.rows;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get shared reports', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all users who have access to a specific report
+   * @param {string} reportId - Report ID
+   * @param {string} reporterId - Reporter's user ID (for verification)
+   * @returns {Promise<array>} Array of viewers
+   */
+  async getReportViewers(reportId, reporterId) {
+    try {
+      const result = await this.query(
+        `SELECT ra.viewerId, ra.grantedAt, ra.expiresAt, ra.isActive
+         FROM report_access ra
+         WHERE ra.reportId = $1 AND ra.reporterId = $2 AND ra.isActive = TRUE
+         ORDER BY ra.grantedAt DESC`,
+        [reportId, reporterId]
+      );
+
+      logger.success('DATABASE', 'Retrieved report viewers', {
+        reportId,
+        count: result.rows.length
+      });
+
+      return result.rows;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get report viewers', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a user has access to a report
+   * @param {string} reportId - Report ID
+   * @param {string} viewerId - User ID
+   * @returns {Promise<object|null>} Access record or null if no access
+   */
+  async checkAccess(reportId, viewerId) {
+    try {
+      const result = await this.query(
+        `SELECT id, reportId, viewerId, grantedAt, expiresAt, isActive
+         FROM report_access
+         WHERE reportId = $1 AND viewerId = $2
+         LIMIT 1`,
+        [reportId, viewerId]
+      );
+
+      return result.rows[0] || null;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to check access', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get submission with decrypted payload
+   * @param {string} reportId - Report ID
+   * @param {object} encryptionService - Encryption service for decryption
+   * @returns {Promise<object>} Submission with decrypted payload
+   */
+  async getSubmissionDecrypted(reportId, encryptionService) {
+    try {
+      const result = await this.query(
+        `SELECT * FROM submissions WHERE reportId = $1`,
+        [reportId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        return null;
+      }
+
+      const submission = result.rows[0];
+
+      // Decrypt the encryption key with master key
+      if (submission.encryptionKey && submission.encryptionKeyIv && submission.encryptionKeyAuthTag) {
+        const reportKey = encryptionService.decryptKey(
+          submission.encryptionKey,
+          submission.encryptionKeyIv,
+          submission.encryptionKeyAuthTag,
+          reportId
+        );
+
+        // Note: The actual payload decryption happens when fetching from IPFS
+        // We just provide the key here for the controller to use
+        submission.reportKey = reportKey;
+      }
+
+      return submission;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get decrypted submission', {
+        error: error.message,
+        reportId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Save panic alert
+   * @param {object} alertData - {userId, walletAddress, locationData, txHash, blockNumber}
+   * @returns {Promise<object>} Panic alert record
+   */
+  async savePanicAlert(alertData) {
+    try {
+      const { userId, walletAddress, locationData, txHash, blockNumber } = alertData;
+
+      const result = await this.query(
+        `INSERT INTO panic_alerts (userId, walletAddress, locationData, txHash, blockNumber)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, userId, locationData, txHash, blockNumber, createdAt`,
+        [userId, walletAddress, locationData, txHash, blockNumber]
+      );
+
+      logger.success('DATABASE', 'Panic alert saved', {
+        userId,
+        alertId: result.rows[0].id
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to save panic alert', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get panic alert history for a user
+   * @param {string} userId - User ID
+   * @param {number} limit - Results limit
+   * @param {number} offset - Results offset
+   * @returns {Promise<array>} Panic alert records
+   */
+  async getPanicAlerts(userId, limit = 10, offset = 0) {
+    try {
+      const result = await this.query(
+        `SELECT id, locationData, txHash, blockNumber, createdAt
+         FROM panic_alerts
+         WHERE userId = $1
+         ORDER BY createdAt DESC
+         LIMIT $2 OFFSET $3`,
+        [userId, limit, offset]
+      );
+
+      return result.rows || [];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get panic alerts', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Save key backup for recovery
+   * @param {object} backupData - {userId, encryptedKey, keyIv, keyAuthTag, pinHash}
+   * @returns {Promise<object>} Key backup record
+   */
+  async saveKeyBackup(backupData) {
+    try {
+      const { userId, encryptedKey, keyIv, keyAuthTag, pinHash } = backupData;
+
+      const result = await this.query(
+        `INSERT INTO key_backups (userId, encryptedKey, keyIv, keyAuthTag, pinHash)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (userId) DO UPDATE SET
+           encryptedKey = $2,
+           keyIv = $3,
+           keyAuthTag = $4,
+           pinHash = $5,
+           backupCreatedAt = CURRENT_TIMESTAMP
+         RETURNING id, userId, backupCreatedAt`,
+        [userId, encryptedKey, keyIv, keyAuthTag, pinHash]
+      );
+
+      logger.success('DATABASE', 'Key backup saved', { userId });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to save key backup', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get key backup by user ID
+   * @param {string} userId - User ID
+   * @returns {Promise<object|null>} Key backup record or null
+   */
+  async getKeyBackup(userId) {
+    try {
+      const result = await this.query(
+        `SELECT id, encryptedKey, keyIv, keyAuthTag, pinHash, backupCreatedAt, recoveryAttempts
+         FROM key_backups
+         WHERE userId = $1`,
+        [userId]
+      );
+
+      return result.rows[0] || null;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get key backup', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Update key backup recovery attempt counter
+   * @param {string} userId - User ID
+   * @returns {Promise<void>}
+   */
+  async incrementRecoveryAttempts(userId) {
+    try {
+      await this.query(
+        `UPDATE key_backups
+         SET recoveryAttempts = recoveryAttempts + 1,
+             lastRecoveryAttempt = CURRENT_TIMESTAMP
+         WHERE userId = $1`,
+        [userId]
+      );
+
+      logger.debug('DATABASE', 'Recovery attempt recorded', { userId });
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to update recovery attempts', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Search and filter reports
+   * @param {object} filters - {userId, status, createdAfter, createdBefore, limit, offset}
+   * @returns {Promise<object>} {reports: [], total: number}
+   */
+  async searchReports(filters) {
+    try {
+      const { userId, status, createdAfter, createdBefore, limit = 10, offset = 0 } = filters;
+
+      let query = `
+        SELECT reportId, status, createdAt, confirmedAt, txHash, ipfsHash
+        FROM submissions
+        WHERE walletAddress = $1
+      `;
+      const params = [userId];
+
+      if (status) {
+        query += ` AND status = $${params.length + 1}`;
+        params.push(status);
+      }
+
+      if (createdAfter) {
+        query += ` AND createdAt >= $${params.length + 1}`;
+        params.push(createdAfter);
+      }
+
+      if (createdBefore) {
+        query += ` AND createdAt <= $${params.length + 1}`;
+        params.push(createdBefore);
+      }
+
+      // Count total
+      const countResult = await this.query(`SELECT COUNT(*) FROM (${query}) as filtered`, params);
+      const total = parseInt(countResult.rows[0].count);
+
+      // Get paginated results
+      query += ` ORDER BY createdAt DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      params.push(limit, offset);
+
+      const result = await this.query(query, params);
+
+      return {
+        reports: result.rows || [],
+        total
+      };
+    } catch (error) {
+      logger.error('DATABASE', 'Search failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Get report statistics for user
+   * @param {string} userId - User ID
+   * @returns {Promise<object>} Stats
+   */
+  async getReportStats(userId) {
+    try {
+      const result = await this.query(
+        `SELECT COUNT(*) as total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN isArchived = TRUE THEN 1 ELSE 0 END) as archived
+         FROM submissions WHERE walletAddress = $1`,
+        [userId]
+      );
+
+      const row = result.rows[0];
+      const sharedResult = await this.query(
+        `SELECT COUNT(*) FROM report_access WHERE viewerId = $1 AND isActive = TRUE`,
+        [userId]
+      );
+
+      return {
+        total: parseInt(row.total) || 0,
+        pending: parseInt(row.pending) || 0,
+        confirmed: parseInt(row.confirmed) || 0,
+        failed: parseInt(row.failed) || 0,
+        archived: parseInt(row.archived) || 0,
+        sharedWithMe: parseInt(sharedResult.rows[0].count) || 0
+      };
+    } catch (error) {
+      logger.error('DATABASE', 'Get stats failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Get notifications for user
+   * @param {object} filters - {userId, isRead, type, limit, offset}
+   * @returns {Promise<object>} {notifications: [], total: number, unreadCount: number}
+   */
+  async getNotifications(filters) {
+    try {
+      const { userId, isRead, type, limit = 20, offset = 0 } = filters;
+
+      let query = 'SELECT * FROM notifications WHERE userId = $1';
+      const params = [userId];
+      let paramCount = 2;
+
+      if (isRead !== undefined) {
+        query += ` AND isRead = $${paramCount}`;
+        params.push(isRead);
+        paramCount++;
+      }
+
+      if (type) {
+        query += ` AND type = $${paramCount}`;
+        params.push(type);
+        paramCount++;
+      }
+
+      const countResult = await this.query(
+        `SELECT COUNT(*) FROM notifications WHERE userId = $1${isRead !== undefined ? ' AND isRead = $2' : ''}${type ? ` AND type = $${isRead !== undefined ? 3 : 2}` : ''}`,
+        isRead !== undefined && type ? [userId, isRead, type] : isRead !== undefined ? [userId, isRead] : type ? [userId, type] : [userId]
+      );
+      const total = parseInt(countResult.rows[0].count);
+
+      const result = await this.query(
+        `${query} ORDER BY createdAt DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
+        [...params, limit, offset]
+      );
+
+      const unreadResult = await this.query(
+        'SELECT COUNT(*) FROM notifications WHERE userId = $1 AND isRead = FALSE',
+        [userId]
+      );
+
+      return {
+        notifications: result.rows || [],
+        total,
+        unreadCount: parseInt(unreadResult.rows[0].count)
+      };
+    } catch (error) {
+      logger.error('DATABASE', 'Get notifications failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Create a notification
+   * @param {object} data - {userId, type, title, message, relatedId}
+   * @returns {Promise<object>} Notification record
+   */
+  async createNotification(data) {
+    try {
+      const { userId, type, title, message, relatedId } = data;
+
+      const result = await this.query(
+        `INSERT INTO notifications (userId, type, title, message, relatedId)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [userId, type, title, message, relatedId || null]
+      );
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Create notification failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Mark notification as read
+   * @param {string} notificationId - Notification ID
+   * @param {string} userId - User ID
+   * @returns {Promise<object|null>} Updated notification or null
+   */
+  async markNotificationAsRead(notificationId, userId) {
+    try {
+      const result = await this.query(
+        `UPDATE notifications SET isRead = TRUE, readAt = CURRENT_TIMESTAMP
+         WHERE id = $1 AND userId = $2 RETURNING *`,
+        [notificationId, userId]
+      );
+
+      return result.rows[0] || null;
+    } catch (error) {
+      logger.error('DATABASE', 'Mark as read failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Mark all notifications as read
+   * @param {string} userId - User ID
+   * @returns {Promise<object>} {count: number}
+   */
+  async markAllNotificationsAsRead(userId) {
+    try {
+      const result = await this.query(
+        `UPDATE notifications SET isRead = TRUE, readAt = CURRENT_TIMESTAMP
+         WHERE userId = $1 AND isRead = FALSE RETURNING id`,
+        [userId]
+      );
+
+      return { count: result.rows.length };
+    } catch (error) {
+      logger.error('DATABASE', 'Mark all as read failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a notification
+   * @param {string} notificationId - Notification ID
+   * @param {string} userId - User ID
+   * @returns {Promise<boolean>} True if deleted
+   */
+  async deleteNotification(notificationId, userId) {
+    try {
+      const result = await this.query(
+        `DELETE FROM notifications WHERE id = $1 AND userId = $2 RETURNING id`,
+        [notificationId, userId]
+      );
+
+      return result.rows.length > 0;
+    } catch (error) {
+      logger.error('DATABASE', 'Delete notification failed', { error: error.message });
+      throw error;
+    }
+  }
+
+  /**
+   * Get unread notification count
+   * @param {string} userId - User ID
+   * @returns {Promise<number>} Unread count
+   */
+  async getUnreadNotificationCount(userId) {
+    try {
+      const result = await this.query(
+        'SELECT COUNT(*) FROM notifications WHERE userId = $1 AND isRead = FALSE',
+        [userId]
+      );
+
+      return parseInt(result.rows[0].count) || 0;
+    } catch (error) {
+      logger.error('DATABASE', 'Get unread count failed', { error: error.message });
+      return 0;
     }
   }
 

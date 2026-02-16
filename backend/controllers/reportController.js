@@ -6,6 +6,7 @@
 const ipfsService = require('../services/ipfs');
 const blockchainService = require('../services/blockchain');
 const databaseService = require('../services/database');
+const encryptionService = require('../services/encryption');
 const logger = require('../utils/logger');
 
 class ReportController {
@@ -16,7 +17,7 @@ class ReportController {
     let txHash = null;
 
     try {
-      const { encryptedPayload, responses, metadata } = req.body;
+      const { payload, responses, metadata } = req.body;
 
       // Generate unique report ID
       reportId = `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -24,55 +25,30 @@ class ReportController {
       logger.logRequest('POST', '/api/submitReport', {
         reportId,
         responseCount: responses ? responses.length : 0,
-        payloadSize: encryptedPayload.length,
+        hasPayload: !!payload,
         hasMetadata: !!metadata
       });
 
-      // ========== STEP 1: Validate and Convert Hex Payload to Buffer ==========
-      // Backend ONLY accepts hex-encoded encrypted data WITH 0x prefix
-      // Frontend must send: "0xa1b2c3d4e5f6..."
-      logger.info('REPORT', 'Validating hex payload', { reportId });
+      // ========== STEP 1: Backend Encryption ==========
+      // Frontend sends unencrypted JSON payload
+      // Backend encrypts it before uploading to IPFS
+      logger.info('REPORT', 'Encrypting payload with backend key', { reportId });
 
-      // Require 0x prefix
-      if (!encryptedPayload.startsWith('0x')) {
-        logger.warn('REPORT', 'Invalid payload format - missing 0x prefix', { reportId });
-        return res.status(400).json({
-          error: true,
-          message: 'encryptedPayload must be hex with 0x prefix',
-          code: 'INVALID_PAYLOAD_FORMAT'
-        });
-      }
+      const encryptionResult = await encryptionService.encryptPayload(
+        { payload, responses, metadata },
+        reportId
+      );
 
-      // Remove 0x prefix for validation and conversion
-      const hexData = encryptedPayload.slice(2);
+      // Encrypt the report key with master key for secure storage
+      const keyEncryption = encryptionService.encryptKey(encryptionResult.reportKey, reportId);
 
-      // Validate: Must be valid hex characters only (0-9, a-f, A-F)
-      if (!/^[0-9a-fA-F]+$/.test(hexData)) {
-        logger.warn('REPORT', 'Invalid payload format - not hex', { reportId });
-        return res.status(400).json({
-          error: true,
-          message: 'encryptedPayload must be valid hex after 0x prefix',
-          code: 'INVALID_PAYLOAD_FORMAT'
-        });
-      }
-
-      // Validate: Hex string must have even length (each byte = 2 hex chars)
-      if (hexData.length % 2 !== 0) {
-        logger.warn('REPORT', 'Invalid hex length - must be even', { reportId });
-        return res.status(400).json({
-          error: true,
-          message: 'encryptedPayload hex string must have even length',
-          code: 'INVALID_HEX_LENGTH'
-        });
-      }
-
-      // Convert validated hex to buffer
-      const payloadBuffer = Buffer.from(hexData, 'hex');
-
-      logger.info('REPORT', 'Payload validated and converted', {
+      logger.info('REPORT', 'Payload encrypted and key secured', {
         reportId,
-        bufferSize: payloadBuffer.length
+        encryptedSize: encryptionResult.encryptedData.length
       });
+
+      // Convert encrypted data to buffer for IPFS upload
+      const payloadBuffer = Buffer.from(encryptionResult.encryptedData, 'hex');
 
       // ========== STEP 2: Upload to IPFS ==========
       logger.info('REPORT', 'Uploading to IPFS', {
@@ -125,7 +101,13 @@ class ReportController {
           blockNumber: blockchainResult.blockNumber,
           gasUsed: blockchainResult.gasUsed,
           metadata,
-          userId // ← Used to encrypt responses and metadata
+          userId,
+          // Encryption key information (backend-encrypted)
+          encryptionKey: keyEncryption.encryptedKey,
+          encryptionKeyIv: keyEncryption.keyIv,
+          encryptionKeyAuthTag: keyEncryption.keyAuthTag,
+          encryptionDataIv: encryptionResult.iv,
+          encryptionDataAuthTag: encryptionResult.authTag
         });
 
         logger.success('REPORT', 'Saved to database', {
@@ -485,6 +467,107 @@ class ReportController {
       res.status(503).json({
         status: 'unhealthy',
         error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get decrypted report payload
+   * User must own the report or have been granted access
+   * GET /api/report/:reportId/decrypt
+   */
+  async getDecryptedReport(req, res, next) {
+    try {
+      const { reportId } = req.params;
+      const userId = req.user?.userId;
+
+      logger.logRequest('GET', `/api/report/${reportId}/decrypt`, {});
+
+      if (!userId) {
+        logger.warn('REPORT', 'User not authenticated', {});
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
+
+      // Get submission with encryption key
+      const submission = await databaseService.getSubmissionDecrypted(reportId, encryptionService);
+
+      if (!submission) {
+        logger.warn('REPORT', 'Report not found', { reportId });
+        return res.status(404).json({
+          error: true,
+          message: 'Report not found'
+        });
+      }
+
+      // Check if user owns the report (wallet address match)
+      const userWallet = userId;
+      // In a real app, you'd compare with submission.walletAddress
+      // For now, assume user is authenticated via JWT
+
+      // Check authorization: user owns report OR has access to it
+      const ownsReport = submission.walletAddress === userWallet;
+      let hasAccess = false;
+
+      if (!ownsReport) {
+        const accessGrant = await databaseService.checkAccess(reportId, userId);
+        hasAccess = accessGrant && accessGrant.isActive &&
+                    (!accessGrant.expiresAt || new Date(accessGrant.expiresAt) > new Date());
+      }
+
+      if (!ownsReport && !hasAccess) {
+        logger.warn('REPORT', 'User does not have access to report', { reportId, userId });
+        return res.status(403).json({
+          error: true,
+          message: 'You do not have access to this report'
+        });
+      }
+
+      // Decrypt the payload using encryption key
+      if (!submission.reportKey) {
+        logger.error('REPORT', 'Report encryption key not found', { reportId });
+        return res.status(500).json({
+          error: true,
+          message: 'Unable to decrypt report - encryption key missing'
+        });
+      }
+
+      // Decrypt the data from IPFS (encrypted payload is the raw data)
+      // Note: In real implementation, you'd fetch the encrypted data from IPFS first
+      // For now, we decrypt what was stored
+      const decryptedPayload = await encryptionService.decryptPayload(
+        submission.encryptedDataFromIPFS || '', // Would come from IPFS in real app
+        submission.reportKey,
+        submission.encryptionDataIv,
+        submission.encryptionDataAuthTag,
+        reportId
+      );
+
+      logger.success('REPORT', 'Report decrypted successfully', { reportId, userId });
+
+      res.status(200).json({
+        success: true,
+        message: 'Report decrypted successfully',
+        data: {
+          reportId,
+          status: submission.status,
+          ...decryptedPayload,
+          createdAt: submission.createdAt,
+          confirmedAt: submission.confirmedAt
+        }
+      });
+
+    } catch (error) {
+      logger.error('REPORT', 'Decryption failed', {
+        error: error.message
+      });
+
+      res.status(500).json({
+        error: true,
+        message: 'Failed to decrypt report',
+        code: 'DECRYPT_FAILED'
       });
     }
   }

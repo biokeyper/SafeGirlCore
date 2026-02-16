@@ -8,6 +8,7 @@ const router = express.Router();
 
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/auth');
+const rateLimit = require('../middleware/rateLimit');
 const { validateSignup, validateLogin, validateOTP, validatePhoneChange, validateForgotPhone } = require('../middleware/validation');
 
 /**
@@ -17,8 +18,9 @@ const { validateSignup, validateLogin, validateOTP, validatePhoneChange, validat
 /**
  * POST /api/auth/signup/initiate
  * Step 1: User provides phone + email, receive OTP
+ * Rate limit: 5 attempts per 15 minutes per phone
  */
-router.post('/signup/initiate', validateSignup, async (req, res, next) => {
+router.post('/signup/initiate', rateLimit.limit(5, 15 * 60 * 1000), validateSignup, async (req, res, next) => {
   try {
     await authController.initiateSignup(req, res, next);
   } catch (error) {
@@ -29,8 +31,9 @@ router.post('/signup/initiate', validateSignup, async (req, res, next) => {
 /**
  * POST /api/auth/signup/verify
  * Step 2: User enters OTP, account created, receive JWT
+ * Rate limit: 5 attempts per 15 minutes per phone
  */
-router.post('/signup/verify', validateOTP, async (req, res, next) => {
+router.post('/signup/verify', rateLimit.limit(5, 15 * 60 * 1000), validateOTP, async (req, res, next) => {
   try {
     await authController.verifySignup(req, res, next);
   } catch (error) {
@@ -45,8 +48,9 @@ router.post('/signup/verify', validateOTP, async (req, res, next) => {
 /**
  * POST /api/auth/login/initiate
  * Step 1: User provides phone, receive OTP
+ * Rate limit: 5 attempts per 15 minutes per phone
  */
-router.post('/login/initiate', validateLogin, async (req, res, next) => {
+router.post('/login/initiate', rateLimit.limit(5, 15 * 60 * 1000), validateLogin, async (req, res, next) => {
   try {
     await authController.initiateLogin(req, res, next);
   } catch (error) {
@@ -57,8 +61,9 @@ router.post('/login/initiate', validateLogin, async (req, res, next) => {
 /**
  * POST /api/auth/login/verify
  * Step 2: User enters OTP, receive JWT
+ * Rate limit: 5 attempts per 15 minutes per phone
  */
-router.post('/login/verify', validateOTP, async (req, res, next) => {
+router.post('/login/verify', rateLimit.limit(5, 15 * 60 * 1000), validateOTP, async (req, res, next) => {
   try {
     await authController.verifyLogin(req, res, next);
   } catch (error) {

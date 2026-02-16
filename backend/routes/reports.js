@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 
 const reportController = require('../controllers/reportController');
+const authMiddleware = require('../middleware/auth');
 const { validateSubmitReport, validateStatusRequest } = require('../middleware/validation');
 
 router.post('/submitReport', validateSubmitReport, async (req, res, next) => {
@@ -34,6 +35,14 @@ router.post('/report/:reportId/archive', async (req, res, next) => {
 router.get('/health', async (req, res, next) => {
   try {
     await reportController.healthCheck(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/report/:reportId/decrypt', authMiddleware, async (req, res, next) => {
+  try {
+    await reportController.getDecryptedReport(req, res, next);
   } catch (error) {
     next(error);
   }

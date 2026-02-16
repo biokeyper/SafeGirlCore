@@ -106,6 +106,44 @@ class BlockchainService {
   }
 
   /**
+   * Revoke access from a viewer
+   * @param {string} viewerAddress - Viewer's wallet address
+   * @returns {Promise<object>} Transaction details
+   */
+  async revokeAccess(viewerAddress) {
+    try {
+      logger.logBlockchain('Revoke Access', 'pending', {
+        viewer: viewerAddress
+      });
+
+      const contract = contractManager.getContract();
+      const tx = await contract.revokeAccess(viewerAddress);
+
+      logger.info('BLOCKCHAIN', 'Revoke access transaction sent', {
+        txHash: tx.hash
+      });
+
+      const receipt = await tx.wait(1);
+
+      logger.logBlockchain('Revoke Access', 'success', {
+        txHash: receipt.hash,
+        viewer: viewerAddress
+      });
+
+      return {
+        success: true,
+        txHash: receipt.hash,
+        blockNumber: receipt.blockNumber
+      };
+    } catch (error) {
+      logger.logBlockchain('Revoke Access', 'error', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get active consents for a reporter
    * @param {string} reporterAddress - Reporter's address
    * @returns {Promise<array>} Array of active consents
@@ -220,6 +258,43 @@ class BlockchainService {
    */
   getContractAddress() {
     return process.env.DEPLOYED_CONTRACT_ADDRESS;
+  }
+
+  /**
+   * Send panic alert to blockchain
+   * @param {string} locationData - User's location/emergency info
+   * @returns {Promise<object>} Transaction details
+   */
+  async sendPanicAlert(locationData) {
+    try {
+      logger.logBlockchain('Send Panic Alert', 'pending', {
+        locationLength: locationData.length
+      });
+
+      const contract = contractManager.getContract();
+      const tx = await contract.sendPanicAlert(locationData);
+
+      logger.info('BLOCKCHAIN', 'Panic alert transaction sent', {
+        txHash: tx.hash
+      });
+
+      const receipt = await tx.wait(1);
+
+      logger.logBlockchain('Send Panic Alert', 'success', {
+        txHash: receipt.hash
+      });
+
+      return {
+        success: true,
+        txHash: receipt.hash,
+        blockNumber: receipt.blockNumber
+      };
+    } catch (error) {
+      logger.logBlockchain('Send Panic Alert', 'error', {
+        error: error.message
+      });
+      throw error;
+    }
   }
 }
 

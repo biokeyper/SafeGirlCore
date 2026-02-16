@@ -7,18 +7,28 @@ const logger = require('../utils/logger');
 
 /**
  * Validate submitReport request
- * Accepts flexible data from frontend: text, audio, metadata, etc.
+ * Backend encryption: Frontend sends unencrypted JSON data
+ * Backend encrypts before IPFS upload
  */
 function validateSubmitReport(req, res, next) {
   try {
-    const { encryptedPayload, responses, metadata } = req.body;
+    const { payload, responses, metadata } = req.body;
 
     // Check required fields
-    if (!encryptedPayload) {
-      logger.logValidation('encryptedPayload', 'Missing field');
+    if (!payload) {
+      logger.logValidation('payload', 'Missing field');
       return res.status(400).json({
         error: true,
-        message: 'Missing field: encryptedPayload'
+        message: 'Missing field: payload (must be JSON object with report data)'
+      });
+    }
+
+    // Payload must be a JSON object (not encrypted hex)
+    if (typeof payload !== 'object' || payload === null) {
+      logger.logValidation('payload', 'Must be a JSON object');
+      return res.status(400).json({
+        error: true,
+        message: 'payload must be a JSON object'
       });
     }
 
@@ -44,16 +54,6 @@ function validateSubmitReport(req, res, next) {
       }
     }
 
-    // Validate payload size (max 50MB for audio + text)
-    const maxSize = parseInt(process.env.MAX_PAYLOAD_SIZE) || 52428800; // 50MB
-    if (encryptedPayload.length > maxSize) {
-      logger.logValidation('encryptedPayload', `Size ${encryptedPayload.length} exceeds ${maxSize}`);
-      return res.status(400).json({
-        error: true,
-        message: `Payload exceeds maximum size of ${maxSize / 1048576}MB`
-      });
-    }
-
     // Optional metadata validation
     if (metadata && typeof metadata !== 'object') {
       logger.logValidation('metadata', 'Must be an object');
@@ -64,10 +64,9 @@ function validateSubmitReport(req, res, next) {
     }
 
     logger.info('VALIDATION', 'Submit report validated successfully', {
-      hasEncrypted: !!encryptedPayload,
+      hasPayload: !!payload,
       hasResponses: !!responses,
-      hasMetadata: !!metadata,
-      payloadSize: encryptedPayload.length
+      hasMetadata: !!metadata
     });
     next();
   } catch (error) {
