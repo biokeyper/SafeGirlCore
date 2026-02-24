@@ -167,4 +167,17 @@ router.get('/verify', authMiddleware, async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/auth/setup-email
+ * Authenticated user sets recovery email after signup/login
+ * Protected endpoint - requires valid JWT token
+ */
+router.post('/setup-email', authMiddleware, async (req, res, next) => {
+  try {
+    await authController.setupRecoveryEmail(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

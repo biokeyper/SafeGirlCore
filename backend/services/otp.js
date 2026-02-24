@@ -41,6 +41,36 @@ class OTPService {
   }
 
   /**
+   * Normalize phone number to E.164 format (+COUNTRYCODEXXXXXXXXX)
+   * Handles local format (0XXXXXXXXX) and international format
+   * Uses COUNTRY_CODE from .env
+   * @private
+   */
+  normalizePhoneNumber(phone) {
+    // Remove all non-digit characters
+    let normalized = phone.replace(/\D/g, '');
+
+    // If starts with 0 (local format), replace with country code from env
+    if (normalized.startsWith('0')) {
+      const countryCode = process.env.COUNTRY_CODE || '256'; // Default to Uganda if not set
+      normalized = countryCode + normalized.substring(1);
+    }
+
+    // Ensure it has the + prefix
+    if (!normalized.startsWith('+')) {
+      normalized = '+' + normalized;
+    }
+
+    logger.debug('OTP', 'Phone normalized', {
+      original: phone,
+      normalized,
+      countryCode: process.env.COUNTRY_CODE
+    });
+
+    return normalized;
+  }
+
+  /**
    * Send OTP via SMS using Twilio
    * Falls back to logging in development
    * @private
@@ -50,10 +80,13 @@ class OTPService {
       // If Twilio is configured, use it
       if (twilioClient && process.env.TWILIO_PHONE_NUMBER) {
         try {
+          // Normalize phone number to E.164 format for Twilio
+          const normalizedPhone = this.normalizePhoneNumber(phone);
+
           const message = await twilioClient.messages.create({
             body: `Your SafeGirl verification code is: ${otpCode}. Valid for 5 minutes.`,
             from: process.env.TWILIO_PHONE_NUMBER,
-            to: phone
+            to: normalizedPhone
           });
 
           logger.success('OTP', 'SMS sent via Twilio', {

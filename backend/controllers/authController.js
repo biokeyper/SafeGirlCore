@@ -14,20 +14,21 @@ class AuthController {
 
   /**
    * Step 1: Initiate Signup
-   * User provides phone and email, receive OTP on phone
+   * User provides phone only, receive OTP on phone
+   * Email is optional and can be set later via setup-email endpoint
    */
   async initiateSignup(req, res, next) {
     try {
-      const { phone, email } = req.body;
+      const { phone } = req.body;
 
       logger.logRequest('POST', '/api/auth/signup/initiate', { phone });
 
-      // Validate phone and email
-      if (!phone || !email) {
-        logger.warn('AUTH', 'Missing phone or email in signup', { phone: !!phone, email: !!email });
+      // Validate phone
+      if (!phone) {
+        logger.warn('AUTH', 'Missing phone in signup', { phone: !!phone });
         return res.status(400).json({
           error: true,
-          message: 'phone and email are required'
+          message: 'phone is required'
         });
       }
 
@@ -45,26 +46,11 @@ class AuthController {
         });
       }
 
-      // Check if email already exists
-      const emailExists = await databaseService.query(
-        'SELECT id FROM users WHERE email = $1',
-        [email]
-      );
-
-      if (emailExists.rows && emailExists.rows.length > 0) {
-        logger.warn('AUTH', 'Email already registered', { email });
-        return res.status(409).json({
-          error: true,
-          message: 'Email already registered. Please use a different email or login.'
-        });
-      }
-
       // Create and send OTP
       const otpResult = await otpService.createAndSendOTP(phone, 'signup');
 
       logger.success('AUTH', 'Signup initiated', {
         phone,
-        email,
         expiresIn: otpResult.expiresIn
       });
 
@@ -73,7 +59,6 @@ class AuthController {
         message: 'OTP sent to your phone. Enter the 6-digit code to continue.',
         data: {
           phone,
-          email,
           expiresIn: otpResult.expiresIn,
           // For testing only
           _testOTP: otpResult._testOTP
@@ -88,18 +73,19 @@ class AuthController {
 
   /**
    * Step 2: Verify Signup OTP and Create Account
+   * Email is optional - user can set it later via setup-email endpoint
    */
   async verifySignup(req, res, next) {
     try {
-      const { phone, email, otp } = req.body;
+      const { phone, otp } = req.body;
 
       logger.logRequest('POST', '/api/auth/signup/verify', { phone });
 
-      if (!phone || !email || !otp) {
-        logger.warn('AUTH', 'Missing fields in signup verification', { phone: !!phone, email: !!email, otp: !!otp });
+      if (!phone || !otp) {
+        logger.warn('AUTH', 'Missing fields in signup verification', { phone: !!phone, otp: !!otp });
         return res.status(400).json({
           error: true,
-          message: 'phone, email, and otp are required'
+          message: 'phone and otp are required'
         });
       }
 
@@ -118,12 +104,12 @@ class AuthController {
       // Generate unique userId
       const userId = crypto.randomUUID();
 
-      // Create user in database
+      // Create user in database (email is NULL initially)
       const result = await databaseService.query(
         `INSERT INTO users (userId, phone, email, phone_verified, email_verified, createdAt)
-         VALUES ($1, $2, $3, true, false, NOW())
+         VALUES ($1, $2, NULL, true, false, NOW())
          RETURNING userId, phone, email, createdAt`,
-        [userId, phone, email]
+        [userId, phone]
       );
 
       if (!result.rows || result.rows.length === 0) {
@@ -132,14 +118,9 @@ class AuthController {
 
       const user = result.rows[0];
 
-      // Send welcome email (non-blocking)
-      emailService.sendWelcomeEmail(user.email, user.userId).catch(err => {
-        logger.warn('AUTH', 'Welcome email failed', { error: err.message });
-      });
-
       // Generate JWT token
       const token = jwt.sign(
-        { userId: user.userId, phone: user.phone, email: user.email },
+        { userId: user.userId, phone: user.phone, email: user.email || null },
         process.env.JWT_SECRET || 'default-secret-key',
         { expiresIn: '7d' }
       );
@@ -148,14 +129,15 @@ class AuthController {
 
       return res.status(201).json({
         success: true,
-        message: 'Account created successfully',
+        message: 'Account created successfully. You can set a recovery email later.',
         data: {
           userId: user.userId,
           phone: user.phone,
           email: user.email,
           token,
           expiresIn: '7d',
-          createdAt: user.createdAt
+          createdAt: user.createdAt,
+          hasRecoveryEmail: !!user.email
         }
       });
 
@@ -724,6 +706,79 @@ class AuthController {
       });
     } catch (error) {
       logger.error('AUTH', 'Token verification error', { error: error.message });
+      next(error);
+    }
+  }
+
+  /**
+   * Setup Recovery Email (Authenticated User)
+   * Allows user to set recovery email after signup/login
+   */
+  async setupRecoveryEmail(req, res, next) {
+    try {
+      const { email } = req.body;
+      const userId = req.user.userId;
+
+      logger.logRequest('POST', '/api/auth/setup-email', { userId });
+
+      if (!email) {
+        logger.warn('AUTH', 'Missing email in setup-email', { userId });
+        return res.status(400).json({
+          error: true,
+          message: 'email is required'
+        });
+      }
+
+      // Check if email already in use by another user
+      const emailExists = await databaseService.query(
+        'SELECT id FROM users WHERE email = $1 AND userId != $2',
+        [email, userId]
+      );
+
+      if (emailExists.rows && emailExists.rows.length > 0) {
+        logger.warn('AUTH', 'Email already registered', { email });
+        return res.status(409).json({
+          error: true,
+          message: 'Email already registered by another user'
+        });
+      }
+
+      // Update user with email
+      const result = await databaseService.query(
+        `UPDATE users
+         SET email = $1, email_verified = false
+         WHERE userId = $2
+         RETURNING userId, phone, email`,
+        [email, userId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        logger.error('AUTH', 'User not found for email update', { userId, email, resultRows: result.rows ? result.rows.length : 0 });
+        throw new Error(`Failed to update user email - user ${userId} not found in database`);
+      }
+
+      const user = result.rows[0];
+
+      // Send verification email (non-blocking)
+      emailService.sendEmailVerification(user.email, userId).catch(err => {
+        logger.warn('AUTH', 'Email verification failed', { error: err.message });
+      });
+
+      logger.success('AUTH', 'Recovery email set successfully', { userId });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Recovery email saved. Verification email sent.',
+        data: {
+          userId: user.userId,
+          phone: user.phone,
+          email: user.email,
+          emailVerified: false
+        }
+      });
+
+    } catch (error) {
+      logger.error('AUTH', 'Setup recovery email error', { error: error.message });
       next(error);
     }
   }

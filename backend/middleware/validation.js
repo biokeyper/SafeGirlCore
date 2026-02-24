@@ -140,11 +140,11 @@ function isValidEmail(email) {
 }
 
 /**
- * Validate signup initiation request (OTP-based)
+ * Validate signup initiation request (OTP-based, phone only)
  */
 function validateSignup(req, res, next) {
   try {
-    const { phone, email } = req.body;
+    const { phone } = req.body;
 
     // Validate phone
     if (!phone || typeof phone !== 'string') {
@@ -160,23 +160,6 @@ function validateSignup(req, res, next) {
       return res.status(400).json({
         error: true,
         message: 'Phone number must contain 10-15 digits'
-      });
-    }
-
-    // Validate email
-    if (!email || typeof email !== 'string') {
-      logger.logValidation('email', 'Missing or invalid');
-      return res.status(400).json({
-        error: true,
-        message: 'email is required and must be a string'
-      });
-    }
-
-    if (!isValidEmail(email)) {
-      logger.logValidation('email', 'Invalid format');
-      return res.status(400).json({
-        error: true,
-        message: 'Invalid email format'
       });
     }
 
@@ -231,7 +214,7 @@ function validateLogin(req, res, next) {
  */
 function validateOTP(req, res, next) {
   try {
-    const { phone, email, otp } = req.body;
+    const { phone, otp } = req.body;
 
     // Validate OTP
     if (!otp || typeof otp !== 'string') {
@@ -251,19 +234,10 @@ function validateOTP(req, res, next) {
       });
     }
 
-    // For signup verification, require both phone and email
-    if (req.path.includes('signup/verify')) {
-      if (!phone || !email) {
-        logger.logValidation('phone/email', 'Missing for signup');
-        return res.status(400).json({
-          error: true,
-          message: 'phone and email are required'
-        });
-      }
-    } else if (req.path.includes('login/verify')) {
-      // For login, require phone
+    // For signup or login verification, require phone
+    if (req.path.includes('signup/verify') || req.path.includes('login/verify')) {
       if (!phone) {
-        logger.logValidation('phone', 'Missing for login');
+        logger.logValidation('phone', 'Missing for OTP verification');
         return res.status(400).json({
           error: true,
           message: 'phone is required'
