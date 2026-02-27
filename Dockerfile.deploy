@@ -1,0 +1,14 @@
+# Build and deployment container for SafeGirl smart contract
+FROM node:22.10.0-alpine
+
+WORKDIR /app
+
+# Copy project files
+COPY . .
+
+# Install dependencies (use legacy-peer-deps for compatibility)
+RUN npm install --legacy-peer-deps
+
+# Run deployment
+ENTRYPOINT ["npx", "hardhat", "run", "scripts/deploy.js"]
+CMD ["--network", "mumbai"]

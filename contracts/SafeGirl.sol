@@ -85,7 +85,13 @@ contract SafeGirl is Ownable {
         report.ipfsHash = _ipfsHash;
         report.timestamp = block.timestamp;
         report.exists = true;
-        report.responses = _responses;
+
+        // Clear old responses and copy new ones
+        delete report.responses;
+        for (uint256 i = 0; i < _responses.length; i++) {
+            report.responses.push(_responses[i]);
+        }
+
         report.version++;
 
         reportCount++;
@@ -108,7 +114,13 @@ contract SafeGirl is Ownable {
         Report storage report = reports[msg.sender];
         report.ipfsHash = _newIpfsHash;
         report.timestamp = block.timestamp;
-        report.responses = _newResponses;
+
+        // Clear old responses and copy new ones
+        delete report.responses;
+        for (uint256 i = 0; i < _newResponses.length; i++) {
+            report.responses.push(_newResponses[i]);
+        }
+
         report.version++;
 
         emit ReportUpdated(msg.sender, block.timestamp, _newIpfsHash, report.version);

@@ -1,43 +1,64 @@
-/**
- * SafeGirl Contract Deployment Script
- * Deploys the SafeGirl contract to the specified network
- */
+import { ethers } from "ethers";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
 async function main() {
-  console.log("🚀 Deploying SafeGirl contract...\n");
+  console.log("🚀 Starting SafeGirl contract deployment...\n");
 
-  // Get the first account (will be the contract owner)
-  const [deployer] = await ethers.getSigners();
-  console.log("📍 Deploying with account:", deployer.address);
-  console.log("💰 Account balance:", ethers.formatEther(await deployer.provider.getBalance(deployer.address)), "ETH\n");
+  // Load environment variables
+  const rpcUrl = process.env.POLYGON_AMOY_RPC_URL;
+  const privateKey = process.env.PRIVATE_KEY;
 
-  // Deploy SafeGirl contract
-  const SafeGirl = await ethers.getContractFactory("SafeGirl");
-  const safeGirl = await SafeGirl.deploy(deployer.address);
+  if (!rpcUrl || !privateKey) {
+    throw new Error("❌ Missing POLYGON_AMOY_RPC_URL or PRIVATE_KEY in .env");
+  }
 
-  // Wait for deployment to complete
-  await safeGirl.waitForDeployment();
-  const contractAddress = await safeGirl.getAddress();
+  console.log(`📡 Connecting to Polygon Amoy RPC: ${rpcUrl.substring(0, 40)}...`);
 
-  console.log("✅ SafeGirl contract deployed successfully!");
-  console.log("📄 Contract Address:", contractAddress);
-  console.log("👤 Owner:", deployer.address);
+  // Create provider and signer
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const signer = new ethers.Wallet(privateKey, provider);
 
-  // Verify contract state
-  const questionsCount = await safeGirl.getQuestionsCount();
-  console.log("📋 Questions initialized:", questionsCount);
+  console.log(`👤 Deployer address: ${signer.address}`);
 
-  console.log("\n✨ Deployment complete!");
-  console.log("\n📌 Update your .env file with:");
-  console.log(`DEPLOYED_CONTRACT_ADDRESS=${contractAddress}`);
-  console.log(`PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80`);
+  // Read contract ABI and bytecode
+  const artifactPath = resolve("./artifacts/contracts/SafeGirl.sol/SafeGirl.json");
+  const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
 
-  return contractAddress;
+  const { abi, bytecode } = artifact;
+
+  console.log("📦 Deploying SafeGirl contract...");
+
+  // Create contract factory and deploy (pass owner address to constructor)
+  const factory = new ethers.ContractFactory(abi, bytecode, signer);
+  const contract = await factory.deploy(signer.address);
+
+  // Wait for deployment
+  const deploymentTx = contract.deploymentTransaction();
+  if (!deploymentTx) {
+    throw new Error("Deployment failed");
+  }
+
+  const receipt = await deploymentTx.wait();
+
+  if (!receipt) {
+    throw new Error("Deployment receipt not available");
+  }
+
+  const deployedAddress = await contract.getAddress();
+
+  console.log("✅ SafeGirl deployed successfully!");
+  console.log(`📍 Contract Address: ${deployedAddress}`);
+  console.log(`📝 Transaction Hash: ${receipt.hash}`);
+  console.log(`📦 Block Number: ${receipt.blockNumber}`);
+  console.log("\n⚠️  IMPORTANT: Update your .env file with this address:");
+  console.log(`DEPLOYED_CONTRACT_ADDRESS=${deployedAddress}`);
+  console.log("\n💾 Save this information for future reference!");
 }
 
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error(error);
+    console.error("❌ Deployment failed:", error.message);
     process.exit(1);
   });

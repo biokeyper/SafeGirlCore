@@ -10,8 +10,9 @@ const SAFEGIRL_BYTECODE = '0x6080604052';  // Minimal bytecode that deploys succ
 
 async function deploy() {
   try {
-    // Connect to local Hardhat node
-    const provider = new ethers.JsonRpcProvider('http://localhost:8545');
+    // Connect to Polygon Amoy testnet
+    const rpcUrl = process.env.POLYGON_AMOY_RPC_URL || 'https://polygon-amoy.g.alchemy.com/v2/demo';
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
 
     // Get first account from Hardhat
     const signer = new ethers.Wallet(

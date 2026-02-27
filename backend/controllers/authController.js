@@ -120,18 +120,18 @@ class AuthController {
 
       // Generate JWT token
       const token = jwt.sign(
-        { userId: user.userId, phone: user.phone, email: user.email || null },
+        { userId: user.userid, phone: user.phone, email: user.email || null },
         process.env.JWT_SECRET || 'default-secret-key',
         { expiresIn: '7d' }
       );
 
-      logger.success('AUTH', 'User signed up successfully', { userId: user.userId });
+      logger.success('AUTH', 'User signed up successfully', { userId: user.userid });
 
       return res.status(201).json({
         success: true,
         message: 'Account created successfully. You can set a recovery email later.',
         data: {
-          userId: user.userId,
+          userId: user.userid,
           phone: user.phone,
           email: user.email,
           token,
@@ -245,24 +245,24 @@ class AuthController {
 
       // Update last login
       await databaseService.query(
-        'UPDATE users SET lastLogin = NOW() WHERE userId = $1',
-        [user.userId]
+        'UPDATE users SET lastLogin = NOW() WHERE userid = $1',
+        [user.userid]
       );
 
       // Generate JWT token
       const token = jwt.sign(
-        { userId: user.userId, phone: user.phone, email: user.email },
+        { userId: user.userid, phone: user.phone, email: user.email },
         process.env.JWT_SECRET || 'default-secret-key',
         { expiresIn: '7d' }
       );
 
-      logger.success('AUTH', 'User logged in successfully', { userId: user.userId });
+      logger.success('AUTH', 'User logged in successfully', { userId: user.userid });
 
       return res.status(200).json({
         success: true,
         message: 'Login successful',
         data: {
-          userId: user.userId,
+          userId: user.userid,
           phone: user.phone,
           email: user.email,
           token,
@@ -760,8 +760,8 @@ class AuthController {
       const user = result.rows[0];
 
       // Send verification email (non-blocking)
-      emailService.sendEmailVerification(user.email, userId).catch(err => {
-        logger.warn('AUTH', 'Email verification failed', { error: err.message });
+      emailService.sendEmailVerification(user.email, user.userid).catch(err => {
+        logger.warn('AUTH', 'Email verification send failed', { error: err.message });
       });
 
       logger.success('AUTH', 'Recovery email set successfully', { userId });
@@ -770,7 +770,7 @@ class AuthController {
         success: true,
         message: 'Recovery email saved. Verification email sent.',
         data: {
-          userId: user.userId,
+          userId: user.userid,
           phone: user.phone,
           email: user.email,
           emailVerified: false

@@ -248,6 +248,82 @@ Your privacy and safety are our top priority.
       return false;
     }
   }
+
+  /**
+   * Send email verification link for recovery email
+   */
+  async sendEmailVerification(recipientEmail, userId) {
+    try {
+      if (!this.initialized) {
+        logger.warn('EMAIL', 'Email service not initialized, skipping verification send');
+        return false;
+      }
+
+      const subject = 'SafeGirl - Verify Your Email Address';
+      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?email=${encodeURIComponent(recipientEmail)}&userId=${userId}`;
+
+      const htmlContent = `
+        <h2>Verify Your Email Address</h2>
+        <p>Thank you for adding an email address to your SafeGirl account!</p>
+
+        <p>Click the button below to verify your email address:</p>
+        <p>
+          <a href="${verificationLink}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Verify Email Address
+          </a>
+        </p>
+
+        <p>Or copy and paste this link in your browser:</p>
+        <p>${verificationLink}</p>
+
+        <p><strong>⏱️ This link expires in 24 hours.</strong></p>
+
+        <p>Once verified, this email can be used to recover your SafeGirl account if needed.</p>
+
+        <hr>
+        <p><small>If you didn't add this email address, please ignore this email.</small></p>
+        <p><small>SafeGirl - Women Safety Platform</small></p>
+      `;
+
+      const plainText = `
+Verify Your Email Address
+
+Thank you for adding an email address to your SafeGirl account!
+
+Click the link below to verify your email address:
+${verificationLink}
+
+This link expires in 24 hours.
+
+If you didn't add this email address, please ignore this email.
+SafeGirl - Women Safety Platform
+      `;
+
+      const mailOptions = {
+        from: this.senderEmail,
+        to: recipientEmail,
+        subject,
+        html: htmlContent,
+        text: plainText
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+
+      logger.success('EMAIL', 'Email verification sent', {
+        to: recipientEmail,
+        userId,
+        messageId: info.messageId
+      });
+
+      return true;
+    } catch (error) {
+      logger.error('EMAIL', 'Failed to send email verification', {
+        error: error.message,
+        to: recipientEmail
+      });
+      return false;
+    }
+  }
 }
 
 module.exports = new EmailService();
