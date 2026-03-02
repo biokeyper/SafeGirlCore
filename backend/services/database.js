@@ -840,6 +840,96 @@ class DatabaseService {
   }
 
   /**
+   * Update panic alert with blockchain info
+   * Called after blockchain confirmation to update txHash and blockNumber
+   */
+  async updatePanicAlert(alertId, updateData) {
+    try {
+      const { txHash, blockNumber, status } = updateData;
+
+      const result = await this.query(
+        `UPDATE panic_alerts
+         SET txHash = $1, blockNumber = $2
+         WHERE id = $3
+         RETURNING id, txHash, blockNumber, createdAt`,
+        [txHash, blockNumber, alertId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error(`Panic alert ${alertId} not found`);
+      }
+
+      logger.success('DATABASE', 'Panic alert updated with blockchain info', {
+        alertId,
+        txHash
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to update panic alert', {
+        alertId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Create panic audit log entry
+   * For tracking all panic alert actions: created, SMS sent, blockchain confirmed, etc.
+   */
+  async createPanicAuditLog(data) {
+    try {
+      const { alertId, userId, action, contactPhone, smsStatus, failureReason, metadata } = data;
+
+      const result = await this.query(
+        `INSERT INTO panic_audit_log (alertId, userId, action, contactPhone, smsStatus, failureReason, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, alertId, action, createdAt`,
+        [alertId, userId, action, contactPhone || null, smsStatus || null, failureReason || null, metadata || null]
+      );
+
+      logger.success('DATABASE', 'Panic audit log created', {
+        alertId,
+        action,
+        userId
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to create panic audit log', {
+        alertId,
+        action,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get panic audit log for an alert
+   */
+  async getPanicAuditLog(alertId) {
+    try {
+      const result = await this.query(
+        `SELECT id, alertId, userId, action, contactPhone, smsStatus, failureReason, createdAt
+         FROM panic_audit_log
+         WHERE alertId = $1
+         ORDER BY createdAt DESC`,
+        [alertId]
+      );
+
+      return result.rows || [];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get panic audit log', {
+        alertId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get panic alert history for a user
    * @param {string} userId - User ID
    * @param {number} limit - Results limit

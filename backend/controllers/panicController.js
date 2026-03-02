@@ -20,6 +20,8 @@ class PanicController {
    * }
    */
   async sendPanicAlert(req, res, next) {
+    let alertId = null;
+
     try {
       const { locationData } = req.body;
       const userId = req.user?.userId;
@@ -53,62 +55,125 @@ class PanicController {
         });
       }
 
-      logger.info('PANIC', 'Processing panic alert', {
+      logger.info('PANIC', 'Processing panic alert (NON-BLOCKING)', {
         userId,
         locationLength: locationData.length
       });
 
-      // Send panic alert to blockchain
+      // ========== STEP 1: Save to database immediately (fast) ==========
       const walletAddress = blockchainService.getWalletAddress();
 
-      const tx = await blockchainService.sendPanicAlert(locationData);
-
-      logger.success('PANIC', 'Panic alert sent to blockchain', {
-        userId,
-        txHash: tx.txHash
-      });
-
-      // Save to database
       const alertRecord = await databaseService.savePanicAlert({
         userId,
         walletAddress,
         locationData,
-        txHash: tx.txHash,
-        blockNumber: tx.blockNumber
+        txHash: null,  // Will be updated after blockchain confirmation
+        blockNumber: null
       });
 
-      logger.success('PANIC', 'Panic alert saved to database', {
+      alertId = alertRecord.id;
+
+      logger.success('PANIC', 'Panic alert saved to database immediately', {
         userId,
-        alertId: alertRecord.id
+        alertId,
+        status: 'pending'
       });
 
+      // ========== STEP 1.5: Create notification for user ==========
+      await databaseService.createNotification({
+        userId,
+        type: 'panic_alert',
+        title: 'Panic Alert Sent',
+        message: 'Your emergency panic alert has been sent. Emergency contacts are being notified.',
+        relatedId: alertId.toString()
+      });
+
+      logger.success('PANIC', 'Notification created for panic alert', {
+        userId,
+        alertId
+      });
+
+      // ========== STEP 2: Return 200 OK immediately to user ==========
       res.status(200).json({
         success: true,
-        message: 'Panic alert sent successfully',
+        message: 'Panic alert received. Help is being sent.',
         data: {
           alertId: alertRecord.id,
-          txHash: tx.txHash,
+          status: 'pending',
           timestamp: new Date().toISOString()
         }
       });
 
-      // Send SMS to emergency contacts in background (non-blocking)
-      this.sendEmergencyContactAlerts(userId, locationData).catch(err => {
-        logger.error('PANIC', 'Emergency SMS send failed', {
+      // ========== STEP 3: Process blockchain + SMS in background (non-blocking) ==========
+      this.processPanicAlertBackground(userId, locationData, alertId).catch(err => {
+        logger.error('PANIC', 'Background processing failed', {
           userId,
+          alertId,
           error: err.message
         });
       });
 
     } catch (error) {
-      logger.error('PANIC', 'Panic alert failed', {
+      logger.error('PANIC', 'Panic alert creation failed', {
+        alertId,
         error: error.message
       });
 
       res.status(500).json({
         error: true,
-        message: 'Failed to send panic alert',
-        code: 'PANIC_FAILED'
+        message: 'Failed to create panic alert',
+        code: 'PANIC_CREATION_FAILED'
+      });
+    }
+  }
+
+  /**
+   * Process panic alert in background
+   * 1. Send to blockchain
+   * 2. Update DB with tx hash
+   * 3. Send SMS to emergency contacts
+   */
+  async processPanicAlertBackground(userId, locationData, alertId) {
+    try {
+      logger.info('PANIC', 'Background processing started', { userId, alertId });
+
+      // ========== Send to blockchain ==========
+      const tx = await blockchainService.sendPanicAlert(locationData);
+
+      logger.success('PANIC', 'Panic alert sent to blockchain', {
+        userId,
+        alertId,
+        txHash: tx.txHash,
+        blockNumber: tx.blockNumber
+      });
+
+      // ========== Update DB with blockchain info ==========
+      await databaseService.updatePanicAlert(alertId, {
+        txHash: tx.txHash,
+        blockNumber: tx.blockNumber,
+        status: 'confirmed'
+      });
+
+      logger.success('PANIC', 'Panic alert updated with blockchain tx', {
+        userId,
+        alertId,
+        txHash: tx.txHash
+      });
+
+      // ========== Send SMS to emergency contacts ==========
+      await this.sendEmergencyContactAlerts(userId, locationData);
+
+      logger.success('PANIC', 'Background processing completed', {
+        userId,
+        alertId,
+        txHash: tx.txHash
+      });
+
+    } catch (error) {
+      logger.error('PANIC', 'Background processing error', {
+        userId,
+        alertId,
+        error: error.message
       });
     }
   }

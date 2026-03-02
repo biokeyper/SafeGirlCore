@@ -253,8 +253,8 @@ CREATE TABLE IF NOT EXISTS panic_alerts (
   id SERIAL PRIMARY KEY,
   userId VARCHAR(255) NOT NULL,
   walletAddress VARCHAR(255),
-  locationData VARCHAR(500) NOT NULL,
-  txHash VARCHAR(255) UNIQUE NOT NULL,
+  locationData VARCHAR(500),
+  txHash VARCHAR(255) UNIQUE,
   blockNumber BIGINT,
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -263,6 +263,36 @@ CREATE TABLE IF NOT EXISTS panic_alerts (
 
 CREATE INDEX idx_panic_userId ON panic_alerts(userId);
 CREATE INDEX idx_panic_createdAt ON panic_alerts(createdAt DESC);
+
+-- ========== PANIC AUDIT LOG TABLE ==========
+-- Tracks all actions related to panic alerts for investigation
+CREATE TABLE IF NOT EXISTS panic_audit_log (
+  id SERIAL PRIMARY KEY,
+  alertId INTEGER NOT NULL,
+  userId VARCHAR(255) NOT NULL,
+
+  -- What action happened
+  action VARCHAR(50) NOT NULL,
+  -- Possible values: 'panic_created', 'sms_sent', 'sms_failed', 'blockchain_confirmed', 'blockchain_failed'
+
+  -- Details about the action
+  contactPhone VARCHAR(20),             -- For SMS-related actions
+  smsStatus VARCHAR(50),                -- 'sent', 'failed', 'pending'
+  failureReason VARCHAR(255),           -- Why it failed (if applicable)
+  metadata JSONB,                       -- Additional data (SMS response, blockchain data, etc)
+
+  -- Timestamps
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (alertId) REFERENCES panic_alerts(id) ON DELETE CASCADE,
+  FOREIGN KEY (userId) REFERENCES users(userId) ON DELETE CASCADE
+);
+
+-- Create indexes for fast lookups
+CREATE INDEX idx_panic_audit_alertId ON panic_audit_log(alertId);
+CREATE INDEX idx_panic_audit_userId ON panic_audit_log(userId);
+CREATE INDEX idx_panic_audit_action ON panic_audit_log(action);
+CREATE INDEX idx_panic_audit_createdAt ON panic_audit_log(createdAt DESC);
 
 -- ========== KEY RECOVERY TABLE ==========
 -- Stores encrypted backup of encryption keys for recovery
@@ -326,6 +356,8 @@ GRANT SELECT, INSERT, UPDATE ON report_access TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE report_access_id_seq TO safegirl_user;
 GRANT SELECT, INSERT ON panic_alerts TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE panic_alerts_id_seq TO safegirl_user;
+GRANT SELECT, INSERT ON panic_audit_log TO safegirl_user;
+GRANT USAGE, SELECT ON SEQUENCE panic_audit_log_id_seq TO safegirl_user;
 GRANT SELECT, INSERT, UPDATE ON notifications TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE notifications_id_seq TO safegirl_user;
 GRANT SELECT, INSERT, UPDATE ON key_backups TO safegirl_user;
