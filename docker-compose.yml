@@ -48,6 +48,9 @@ services:
       # Expose port 3001 so frontend can reach backend
       - "3001:3001"
 
+    env_file:
+      - ./backend/.env
+
     environment:
       # Application settings
       NODE_ENV: development
@@ -60,12 +63,7 @@ services:
       DATABASE_URL: postgresql://safegirl_user:safegirl_password@postgres:5432/safegirl_db
 
       # Blockchain settings - use Polygon Amoy testnet (Mumbai deprecated)
-      POLYGON_AMOY_RPC_URL: https://polygon-amoy.g.alchemy.com/v2/demo
-      PRIVATE_KEY: ${PRIVATE_KEY:-0x0000000000000000000000000000000000000000000000000000000000000000}
-      DEPLOYED_CONTRACT_ADDRESS: ${DEPLOYED_CONTRACT_ADDRESS:-0x0000000000000000000000000000000000000000}
-
-      # IPFS
-      WEB3_STORAGE_TOKEN: ${WEB3_STORAGE_TOKEN:-your_token_here}
+      POLYGON_AMOY_RPC_URL: https://rpc-amoy.polygon.technology/
 
       # Server settings
       MAX_PAYLOAD_SIZE: 10485760

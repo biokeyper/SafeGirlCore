@@ -1,9 +1,10 @@
 /**
  * Email Service
- * Handles sending emails using nodemailer
+ * Handles sending emails using nodemailer and SMS using Twilio
  */
 
 const nodemailer = require('nodemailer');
+const twilio = require('twilio');
 const logger = require('../utils/logger');
 
 class EmailService {
@@ -11,38 +12,52 @@ class EmailService {
     this.transporter = null;
     this.senderEmail = process.env.EMAIL_FROM;
     this.initialized = false;
+    this.twilioClient = null;
+    this.twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
   }
 
   /**
-   * Initialize email transporter
+   * Initialize email transporter and Twilio SMS client
    */
   async initialize() {
     try {
+      // Initialize Email service
       if (!process.env.EMAIL_FROM || !process.env.EMAIL_PASSWORD) {
         logger.warn('EMAIL', 'Email credentials not configured - email service disabled');
-        return false;
+      } else {
+        // Create transporter for Gmail (adjust for other providers)
+        this.transporter = nodemailer.createTransport({
+          service: 'gmail',  // Change this if using different email provider
+          auth: {
+            user: process.env.EMAIL_FROM,
+            pass: process.env.EMAIL_PASSWORD  // Use app password for Gmail
+          }
+        });
+
+        // Test connection
+        await this.transporter.verify();
+        logger.success('EMAIL', 'Email service initialized', {
+          email: process.env.EMAIL_FROM
+        });
       }
 
-      // Create transporter for Gmail (adjust for other providers)
-      this.transporter = nodemailer.createTransport({
-        service: 'gmail',  // Change this if using different email provider
-        auth: {
-          user: process.env.EMAIL_FROM,
-          pass: process.env.EMAIL_PASSWORD  // Use app password for Gmail
-        }
-      });
+      // Initialize Twilio SMS service
+      if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+        logger.warn('SMS', 'Twilio credentials not configured - SMS service disabled');
+      } else {
+        this.twilioClient = twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+        logger.success('SMS', 'Twilio SMS service initialized', {
+          phoneNumber: this.twilioPhoneNumber
+        });
+      }
 
-      // Test connection
-      await this.transporter.verify();
       this.initialized = true;
-
-      logger.success('EMAIL', 'Email service initialized', {
-        email: process.env.EMAIL_FROM
-      });
-
       return true;
     } catch (error) {
-      logger.error('EMAIL', 'Failed to initialize email service', {
+      logger.error('EMAIL', 'Failed to initialize services', {
         error: error.message
       });
       return false;
@@ -320,6 +335,44 @@ SafeGirl - Women Safety Platform
       logger.error('EMAIL', 'Failed to send email verification', {
         error: error.message,
         to: recipientEmail
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Send SMS via Twilio
+   * Used for emergency panic alerts to emergency contacts
+   */
+  async sendSMS(toPhoneNumber, messageBody) {
+    try {
+      if (!this.twilioClient) {
+        logger.warn('SMS', 'Twilio service not initialized, skipping SMS send');
+        return false;
+      }
+
+      if (!toPhoneNumber || !messageBody) {
+        logger.warn('SMS', 'Missing phone number or message body');
+        return false;
+      }
+
+      const message = await this.twilioClient.messages.create({
+        body: messageBody,
+        from: this.twilioPhoneNumber,
+        to: toPhoneNumber
+      });
+
+      logger.success('SMS', 'SMS sent successfully', {
+        to: toPhoneNumber,
+        messageId: message.sid,
+        status: message.status
+      });
+
+      return true;
+    } catch (error) {
+      logger.error('SMS', 'Failed to send SMS', {
+        error: error.message,
+        to: toPhoneNumber
       });
       return false;
     }

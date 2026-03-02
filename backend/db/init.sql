@@ -149,13 +149,36 @@ CREATE TABLE IF NOT EXISTS users (
   email_verified BOOLEAN DEFAULT FALSE,       -- Email verification status
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   lastLogin TIMESTAMP,
-  lastPhoneChange TIMESTAMP                   -- Track when phone last changed
+  lastPhoneChange TIMESTAMP,                  -- Track when phone last changed
+  pin VARCHAR(6),                             -- Content lock PIN (1-6 digits, optional)
+  customPanicMessage VARCHAR(255)             -- Custom message for emergency contacts on panic alert
 );
 
 -- Create indexes for fast lookups
 CREATE INDEX idx_users_userId ON users(userId);
 CREATE INDEX idx_users_phone ON users(phone);
 CREATE INDEX idx_users_email ON users(email);
+
+-- ========== EMERGENCY CONTACTS TABLE ==========
+-- Stores emergency contacts for panic alerts
+CREATE TABLE IF NOT EXISTS emergency_contacts (
+  id SERIAL PRIMARY KEY,
+  userId VARCHAR(255) NOT NULL,              -- User who configured this contact
+  phone VARCHAR(20) NOT NULL,                -- Contact's phone number
+  name VARCHAR(255),                         -- Contact's name (from device contacts)
+  relationship VARCHAR(50),                  -- Relationship: "mother", "friend", "police", etc.
+  isActive BOOLEAN DEFAULT TRUE,             -- Whether to send alerts to this contact
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (userId) REFERENCES users(userId) ON DELETE CASCADE,
+  UNIQUE(userId, phone)                      -- One entry per user-contact combo
+);
+
+-- Create indexes for fast lookups
+CREATE INDEX idx_emergency_userId ON emergency_contacts(userId);
+CREATE INDEX idx_emergency_active ON emergency_contacts(userId, isActive);
+CREATE INDEX idx_emergency_createdAt ON emergency_contacts(createdAt DESC);
 
 -- ========== OTP TABLE ==========
 -- Stores one-time passwords for authentication
@@ -293,6 +316,8 @@ GRANT SELECT ON pending_submissions TO safegirl_user;
 GRANT SELECT ON confirmed_submissions TO safegirl_user;
 GRANT SELECT, INSERT, UPDATE ON users TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE users_id_seq TO safegirl_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON emergency_contacts TO safegirl_user;
+GRANT USAGE, SELECT ON SEQUENCE emergency_contacts_id_seq TO safegirl_user;
 GRANT SELECT, INSERT, UPDATE ON otps TO safegirl_user;
 GRANT USAGE, SELECT ON SEQUENCE otps_id_seq TO safegirl_user;
 GRANT SELECT, INSERT, UPDATE ON recovery_tokens TO safegirl_user;

@@ -106,9 +106,9 @@ class AuthController {
 
       // Create user in database (email is NULL initially)
       const result = await databaseService.query(
-        `INSERT INTO users (userId, phone, email, phone_verified, email_verified, createdAt)
-         VALUES ($1, $2, NULL, true, false, NOW())
-         RETURNING userId, phone, email, createdAt`,
+        `INSERT INTO users (userId, phone, email, phone_verified, email_verified, pin, createdAt)
+         VALUES ($1, $2, NULL, true, false, NULL, NOW())
+         RETURNING userId, phone, email, pin, createdAt`,
         [userId, phone]
       );
 
@@ -134,6 +134,7 @@ class AuthController {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
+          pin: user.pin || null,
           token,
           expiresIn: '7d',
           createdAt: user.createdAt,
@@ -233,7 +234,7 @@ class AuthController {
 
       // Get user info
       const userResult = await databaseService.query(
-        'SELECT userId, email, phone FROM users WHERE phone = $1',
+        'SELECT userId, email, phone, pin FROM users WHERE phone = $1',
         [phone]
       );
 
@@ -265,6 +266,7 @@ class AuthController {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
+          pin: user.pin || null,
           token,
           expiresIn: '7d'
         }
@@ -779,6 +781,75 @@ class AuthController {
 
     } catch (error) {
       logger.error('AUTH', 'Setup recovery email error', { error: error.message });
+      next(error);
+    }
+  }
+
+  /**
+   * Set or Update PIN (Authenticated User)
+   * PIN is a UI-level content lock (1-6 numeric digits, optional, plaintext)
+   */
+  async setPin(req, res, next) {
+    try {
+      const { pin } = req.body;
+      const userId = req.user.userId;
+
+      logger.logRequest('POST', '/api/auth/set-pin', { userId });
+
+      // Update user PIN
+      const result = await databaseService.query(
+        'UPDATE users SET pin = $1 WHERE userid = $2 RETURNING pin',
+        [pin, userId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('Failed to set PIN');
+      }
+
+      logger.success('AUTH', 'PIN set successfully', { userId });
+
+      return res.status(200).json({
+        success: true,
+        message: 'PIN set successfully',
+        data: { pin }
+      });
+
+    } catch (error) {
+      logger.error('AUTH', 'Set PIN error', { error: error.message });
+      next(error);
+    }
+  }
+
+  /**
+   * Get PIN (Authenticated User)
+   * Returns the current PIN for the user
+   */
+  async getPin(req, res, next) {
+    try {
+      const userId = req.user.userId;
+
+      logger.logRequest('GET', '/api/auth/get-pin', { userId });
+
+      const result = await databaseService.query(
+        'SELECT pin FROM users WHERE userid = $1',
+        [userId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('User not found');
+      }
+
+      const pin = result.rows[0]?.pin || null;
+
+      logger.success('AUTH', 'PIN retrieved successfully', { userId });
+
+      return res.status(200).json({
+        success: true,
+        data: { pin, hasPin: !!pin }
+      });
+
+    } catch (error) {
+      logger.error('AUTH', 'Get PIN error', { error: error.message });
       next(error);
     }
   }

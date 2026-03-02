@@ -9,7 +9,7 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/auth');
 const rateLimit = require('../middleware/rateLimit');
-const { validateSignup, validateLogin, validateOTP, validatePhoneChange, validateForgotPhone } = require('../middleware/validation');
+const { validateSignup, validateLogin, validateOTP, validatePhoneChange, validateForgotPhone, validatePin } = require('../middleware/validation');
 
 /**
  * SIGNUP FLOW
@@ -175,6 +175,36 @@ router.get('/verify', authMiddleware, async (req, res, next) => {
 router.post('/setup-email', authMiddleware, async (req, res, next) => {
   try {
     await authController.setupRecoveryEmail(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PIN MANAGEMENT
+ */
+
+/**
+ * POST /api/auth/set-pin
+ * Authenticated user sets or updates their content lock PIN
+ * Protected endpoint - requires valid JWT token
+ */
+router.post('/set-pin', authMiddleware, validatePin, async (req, res, next) => {
+  try {
+    await authController.setPin(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/auth/get-pin
+ * Authenticated user retrieves their current PIN
+ * Protected endpoint - requires valid JWT token
+ */
+router.get('/get-pin', authMiddleware, async (req, res, next) => {
+  try {
+    await authController.getPin(req, res, next);
   } catch (error) {
     next(error);
   }

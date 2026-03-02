@@ -324,6 +324,153 @@ function validateForgotPhone(req, res, next) {
   }
 }
 
+/**
+ * Validate PIN format
+ * PIN must be 1-6 numeric digits
+ */
+function validatePin(req, res, next) {
+  try {
+    const { pin } = req.body;
+
+    if (!pin) {
+      logger.logValidation('pin', 'Missing field');
+      return res.status(400).json({
+        error: true,
+        message: 'pin is required'
+      });
+    }
+
+    if (!/^\d{1,6}$/.test(pin)) {
+      logger.logValidation('pin', 'Invalid format');
+      return res.status(400).json({
+        error: true,
+        message: 'pin must be 1-6 digits'
+      });
+    }
+
+    logger.info('VALIDATION', 'PIN validated successfully');
+    next();
+  } catch (error) {
+    logger.error('VALIDATION', 'PIN validation error', { error: error.message });
+    res.status(500).json({
+      error: true,
+      message: 'Validation error'
+    });
+  }
+}
+
+/**
+ * Validate panic message (custom message for emergency contacts)
+ * Max 255 characters, required but can be any text
+ */
+function validatePanicMessage(req, res, next) {
+  try {
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      logger.logValidation('message', 'Missing or invalid');
+      return res.status(400).json({
+        error: true,
+        message: 'message is required and must be a string'
+      });
+    }
+
+    if (message.trim().length === 0) {
+      logger.logValidation('message', 'Empty message');
+      return res.status(400).json({
+        error: true,
+        message: 'message cannot be empty'
+      });
+    }
+
+    if (message.length > 255) {
+      logger.logValidation('message', 'Exceeds 255 chars');
+      return res.status(400).json({
+        error: true,
+        message: 'message must not exceed 255 characters'
+      });
+    }
+
+    logger.info('VALIDATION', 'Panic message validated successfully');
+    next();
+  } catch (error) {
+    logger.error('VALIDATION', 'Panic message validation error', { error: error.message });
+    res.status(500).json({
+      error: true,
+      message: 'Validation error'
+    });
+  }
+}
+
+/**
+ * Validate emergency contact (phone + optional relationship)
+ */
+function validateEmergencyContact(req, res, next) {
+  try {
+    const { phone, name, relationship } = req.body;
+
+    // Validate phone
+    if (!phone || typeof phone !== 'string') {
+      logger.logValidation('phone', 'Missing or invalid');
+      return res.status(400).json({
+        error: true,
+        message: 'phone is required and must be a string'
+      });
+    }
+
+    if (!isValidPhone(phone)) {
+      logger.logValidation('phone', 'Invalid format');
+      return res.status(400).json({
+        error: true,
+        message: 'Phone number must contain 10-15 digits'
+      });
+    }
+
+    // Validate name (optional but if provided, must be string)
+    if (name && typeof name !== 'string') {
+      logger.logValidation('name', 'Must be string');
+      return res.status(400).json({
+        error: true,
+        message: 'name must be a string'
+      });
+    }
+
+    if (name && name.length > 255) {
+      logger.logValidation('name', 'Exceeds 255 chars');
+      return res.status(400).json({
+        error: true,
+        message: 'name must not exceed 255 characters'
+      });
+    }
+
+    // Validate relationship (optional but if provided, must be string)
+    if (relationship && typeof relationship !== 'string') {
+      logger.logValidation('relationship', 'Must be string');
+      return res.status(400).json({
+        error: true,
+        message: 'relationship must be a string'
+      });
+    }
+
+    if (relationship && relationship.length > 50) {
+      logger.logValidation('relationship', 'Exceeds 50 chars');
+      return res.status(400).json({
+        error: true,
+        message: 'relationship must not exceed 50 characters'
+      });
+    }
+
+    logger.info('VALIDATION', 'Emergency contact validated successfully');
+    next();
+  } catch (error) {
+    logger.error('VALIDATION', 'Emergency contact validation error', { error: error.message });
+    res.status(500).json({
+      error: true,
+      message: 'Validation error'
+    });
+  }
+}
+
 module.exports = {
   validateSubmitReport,
   validateStatusRequest,
@@ -332,6 +479,9 @@ module.exports = {
   validateOTP,
   validatePhoneChange,
   validateForgotPhone,
+  validatePin,
+  validatePanicMessage,
+  validateEmergencyContact,
   isValidAddress,
   isValidPhone,
   isValidEmail
