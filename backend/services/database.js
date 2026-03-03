@@ -178,11 +178,11 @@ class DatabaseService {
       const query = `
         INSERT INTO submissions (
           reportId, txHash, ipfsHash, responses,
-          blockNumber, gasUsed, status, metadata,
+          blockNumber, gasUsed, status, metadata, userId,
           encryptionKey, encryptionKeyIv, encryptionKeyAuthTag,
           encryptionDataIv, encryptionDataAuthTag
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING *;
       `;
 
@@ -195,6 +195,7 @@ class DatabaseService {
         gasUsed,
         'pending', // Initial status
         metadata ? JSON.stringify(metadata) : null,
+        userId,
         encryptionKey,
         encryptionKeyIv,
         encryptionKeyAuthTag,

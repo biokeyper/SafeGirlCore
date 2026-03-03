@@ -70,10 +70,10 @@ class ReportController {
       logger.info('REPORT', 'Submitting to blockchain', {
         reportId,
         ipfsHash,
-        responseCount: responses.length
+        responseCount: responses ? responses.length : 0
       });
 
-      const blockchainResult = await blockchainService.submitReport(ipfsHash, responses);
+      const blockchainResult = await blockchainService.submitReport(ipfsHash, responses || []);
 
       txHash = blockchainResult.txHash;
 
@@ -502,16 +502,13 @@ class ReportController {
         });
       }
 
-      // Check if user owns the report (wallet address match)
-      const userWallet = userId;
-      // In a real app, you'd compare with submission.walletAddress
-      // For now, assume user is authenticated via JWT
-
-      // Check authorization: user owns report OR has access to it
-      const ownsReport = submission.walletAddress === userWallet;
+      // Check if user owns the report (compare userId from JWT to submission userId)
+      // Note: PostgreSQL returns lowercase column names, so it's submission.userid not submission.userId
+      const ownsReport = submission.userid === userId;
       let hasAccess = false;
 
       if (!ownsReport) {
+        // If user doesn't own the report, check if they have access via sharing
         const accessGrant = await databaseService.checkAccess(reportId, userId);
         hasAccess = accessGrant && accessGrant.isActive &&
                     (!accessGrant.expiresAt || new Date(accessGrant.expiresAt) > new Date());

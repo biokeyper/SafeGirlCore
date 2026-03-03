@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 
 const authController = require('../controllers/authController');
+const deleteAccountController = require('../controllers/deleteAccountController');
 const authMiddleware = require('../middleware/auth');
 const rateLimit = require('../middleware/rateLimit');
 const { validateSignup, validateLogin, validateOTP, validatePhoneChange, validateForgotPhone, validatePin } = require('../middleware/validation');
@@ -205,6 +206,23 @@ router.post('/set-pin', authMiddleware, validatePin, async (req, res, next) => {
 router.get('/get-pin', authMiddleware, async (req, res, next) => {
   try {
     await authController.getPin(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE ACCOUNT
+ */
+
+/**
+ * POST /api/auth/delete-account
+ * Authenticated user permanently deletes their account and all data
+ * Protected endpoint - requires valid JWT token
+ */
+router.post('/delete-account', authMiddleware, async (req, res, next) => {
+  try {
+    await deleteAccountController.deleteAccount(req, res, next);
   } catch (error) {
     next(error);
   }

@@ -181,7 +181,7 @@ contract SafeGirl is Ownable {
 
     /// @notice Send a panic alert with location data
     /// @param _locationData Location information (encrypted or obfuscated)
-    function panic(string calldata _locationData) external {
+    function sendPanicAlert(string calldata _locationData) external {
         require(bytes(_locationData).length > 0, "Location data required");
         require(bytes(_locationData).length <= MAX_LOCATION_DATA_LENGTH, "Location data exceeds max length");
 

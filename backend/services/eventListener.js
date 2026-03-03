@@ -21,6 +21,15 @@ class EventListener {
 
       logger.logServer('Starting event listener...');
 
+      // Add error handler to suppress benign Hardhat node filter errors
+      contract.on('error', (error) => {
+        // Silently ignore "filter not found" errors - these are benign on local Hardhat
+        if (!error.message?.includes?.('filter not found') &&
+            !error.message?.includes?.('could not coalesce error')) {
+          logger.error('EVENT_LISTENER', 'Contract error', { error: error.message });
+        }
+      });
+
       // Listen to ReportSubmitted events
       contract.on('ReportSubmitted', (reporter, timestamp, ipfsHash, version) => {
         logger.success('EVENT', 'Report submitted', {

@@ -15,7 +15,7 @@ const reportRoutes = require('./routes/reports');
 const authRoutes = require('./routes/auth');
 const accessRoutes = require('./routes/access');
 const panicRoutes = require('./routes/panic');
-const keyRoutes = require('./routes/keys');
+const emergencyRoutes = require('./routes/emergency');
 const searchRoutes = require('./routes/search');
 const notificationRoutes = require('./routes/notifications');
 const emailService = require('./services/email');
@@ -72,9 +72,9 @@ async function initializeServices() {
       logger.warn('SERVER', 'Email service not initialized - recovery emails will not be sent');
     }
 
-    // 5. Start event listener
-    logger.logServer('Starting event listener...');
-    await eventListener.startListening();
+    // 5. Start event listener (disabled - using database logging instead of blockchain filters)
+    // logger.logServer('Starting event listener...');
+    // await eventListener.startListening();
 
     logger.success('SERVER', 'All services initialized successfully');
     return true;
@@ -91,7 +91,7 @@ app.use('/api', reportRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/access', accessRoutes);
 app.use('/api/panic-alert', panicRoutes);
-app.use('/api/keys', keyRoutes);
+app.use('/api/emergency', emergencyRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/notifications', notificationRoutes);
 

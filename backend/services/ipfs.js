@@ -1,34 +1,36 @@
 /**
  * IPFS Service
- * Handles uploading encrypted reports to IPFS using Web3.Storage
+ * Handles uploading encrypted reports to IPFS using Pinata
+ * Pinata: Reliable IPFS pinning service
  */
 
-const { Web3Storage } = require('web3.storage');
+const FormData = require('form-data');
+const axios = require('axios');
 const logger = require('../utils/logger');
 
 class IPFSService {
   constructor() {
-    this.token = process.env.WEB3_STORAGE_TOKEN;
-    this.client = null;
+    this.token = process.env.PINATA_JWT;
+    this.apiUrl = 'https://api.pinata.cloud/pinning';
+    this.gatewayUrl = 'https://gateway.pinata.cloud/ipfs';
     this.isInitialized = false;
   }
 
   /**
-   * Initialize Web3.Storage client
+   * Initialize Pinata client
    */
   async initialize() {
     try {
       if (!this.token) {
-        throw new Error('WEB3_STORAGE_TOKEN not set in .env');
+        throw new Error('PINATA_JWT not set in .env');
       }
 
-      this.client = new Web3Storage({ token: this.token });
+      // Pinata uses JWT Bearer token authentication
       this.isInitialized = true;
-
-      logger.success('IPFS', 'Web3.Storage client initialized');
+      logger.success('IPFS', 'Pinata IPFS client initialized');
       return true;
     } catch (error) {
-      logger.error('IPFS', 'Failed to initialize Web3.Storage', {
+      logger.error('IPFS', 'Failed to initialize Pinata', {
         error: error.message
       });
       return false;
@@ -51,34 +53,146 @@ class IPFSService {
         throw new Error('Empty encrypted data');
       }
 
-      logger.info('IPFS', 'Starting upload', {
+      console.log('\n========== IPFS UPLOAD DEBUG ==========');
+      console.log('Step 1: Received data');
+      console.log('  - Filename:', filename);
+      console.log('  - Data size:', encryptedData.length, 'bytes');
+      console.log('  - Data type:', typeof encryptedData);
+      console.log('  - Is Buffer:', Buffer.isBuffer(encryptedData));
+      console.log('  - First 20 bytes:', encryptedData.slice(0, 20).toString('hex'));
+
+      logger.info('IPFS', 'Starting upload to Pinata', {
         filename,
+        size: encryptedData.length,
+        dataType: typeof encryptedData,
+        isBuffer: Buffer.isBuffer(encryptedData)
+      });
+
+      // Create FormData with Buffer directly (not stream)
+      console.log('\nStep 2: Creating FormData with Buffer directly');
+      const formData = new FormData();
+      console.log('  - FormData instance created');
+
+      // Append the Buffer directly with filename (NO stream conversion)
+      formData.append('file', encryptedData, {
+        filename: filename,
+        contentType: 'application/octet-stream'
+      });
+      console.log('  - Buffer appended directly with filename:', filename);
+      console.log('  - Buffer size:', encryptedData.length, 'bytes');
+
+      // Append pinata metadata (Pinata expects this)
+      formData.append('pinataMetadata', JSON.stringify({
+        name: filename
+      }));
+      console.log('  - pinataMetadata appended');
+
+      // Append pinata options (Pinata expects this)
+      formData.append('pinataOptions', JSON.stringify({
+        cidVersion: 1
+      }));
+      console.log('  - pinataOptions appended');
+      console.log('  - FormData _form array length:', formData._form?.length);
+
+      // Get headers from form-data (Buffer allows proper Content-Length calculation)
+      console.log('\nStep 3: Getting headers from FormData');
+      const formDataHeaders = formData.getHeaders();
+      console.log('  - Form-data headers:', formDataHeaders);
+
+      const headers = {
+        Authorization: `Bearer ${this.token}`,
+        ...formDataHeaders
+      };
+
+      console.log('  - Final headers:');
+      console.log('    - Authorization:', headers['Authorization'] ? 'Bearer ' + headers['Authorization'].substring(7, 20) + '...' : 'MISSING');
+      console.log('    - Content-Type:', headers['content-type']);
+      console.log('    - Content-Length:', headers['content-length'] || 'NOT SET');
+
+      logger.debug('IPFS', 'Pinata request details', {
+        endpoint: `${this.apiUrl}/pinFileToIPFS`,
+        hasAuth: !!headers['Authorization'],
+        contentType: headers['content-type']?.substring(0, 60)
+      });
+
+      // Upload to Pinata using Axios
+      console.log('\nStep 4: Sending request to Pinata via Axios');
+      console.log('  - Endpoint:', `${this.apiUrl}/pinFileToIPFS`);
+      console.log('  - Method: POST');
+      console.log('  - Headers:', {
+        'Authorization': headers['Authorization'] ? 'Bearer ****' : 'MISSING',
+        'Content-Type': headers['content-type'],
+        'Content-Length': headers['content-length'] || 'auto-calculated'
+      });
+
+      let response;
+      try {
+        response = await axios.post(
+          `${this.apiUrl}/pinFileToIPFS`,
+          formData,
+          {
+            maxBodyLength: 'Infinity',
+            maxContentLength: 'Infinity',
+            headers: {
+              ...formData.getHeaders(),  // This ensures proper boundary
+              'Authorization': `Bearer ${this.token}`
+            }
+          }
+        );
+      } catch (axiosError) {
+        console.log('\n❌ AXIOS ERROR');
+        console.log('  - Message:', axiosError.message);
+        console.log('  - Status:', axiosError.response?.status);
+        console.log('  - Error data:', JSON.stringify(axiosError.response?.data, null, 2));
+        throw axiosError;
+      }
+
+      console.log('\nStep 5: Got response from Pinata');
+      console.log('  - Status:', response.status);
+      console.log('  - Status text:', response.statusText);
+      console.log('  - Response data:', JSON.stringify(response.data, null, 2));
+
+      logger.debug('IPFS', 'Pinata response', {
+        status: response.status,
+        statusText: response.statusText
+      });
+
+      console.log('\nStep 6: Extracting CID from response');
+      const result = response.data;
+      const cid = result.IpfsHash;
+      console.log('  - Extracted CID:', cid);
+
+      if (!cid) {
+        console.log('  - ERROR: No CID in response!');
+        logger.error('IPFS', 'No IPFS hash in Pinata response', { result });
+        throw new Error('Upload successful but no IPFS hash returned');
+      }
+
+      console.log('\n✅ SUCCESS: Upload complete');
+      console.log('  - CID:', cid);
+      console.log('=====================================\n');
+
+      logger.success('IPFS', 'Pinata upload successful', {
+        cid: cid,
+        filename: filename,
         size: encryptedData.length
-      });
-
-      // Create a File object for Web3.Storage
-      const file = new File([encryptedData], filename, {
-        type: 'application/octet-stream'
-      });
-
-      // Upload to IPFS
-      const cid = await this.client.put([file], {
-        onRootCidReady: (cid) => {
-          logger.debug('IPFS', 'Root CID generated', { cid: cid.toString() });
-        },
-        onStoredChunk: (bytes) => {
-          logger.debug('IPFS', 'Chunk stored', { bytes });
-        }
       });
 
       logger.logIPFS('Upload', 'success', {
-        cid: cid.toString(),
+        cid,
         filename,
         size: encryptedData.length
       });
 
-      return cid.toString();
+      return cid;
     } catch (error) {
+      console.log('\n❌ UPLOAD FAILED');
+      console.log('  - Error message:', error.message);
+      if (error.response?.data) {
+        console.log('  - Pinata error details:', JSON.stringify(error.response.data, null, 2));
+      }
+      console.log('=====================================\n');
+
       logger.logIPFS('Upload', 'error', {
         filename,
         error: error.message
@@ -104,8 +218,8 @@ class IPFSService {
 
       logger.info('IPFS', 'Starting retrieval', { cid });
 
-      // Retrieve file from IPFS
-      const response = await fetch(`https://${cid}.ipfs.w3s.link/`);
+      // Retrieve file from IPFS via NFT.storage gateway
+      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -138,7 +252,7 @@ class IPFSService {
     try {
       logger.info('IPFS', 'Verifying file', { cid });
 
-      const response = await fetch(`https://${cid}.ipfs.w3s.link/`, {
+      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`, {
         method: 'HEAD'
       });
 
@@ -166,7 +280,7 @@ class IPFSService {
    * @returns {string} Full gateway URL
    */
   getGatewayURL(cid) {
-    return `https://${cid}.ipfs.w3s.link/`;
+    return `${this.gatewayUrl}/${cid}`;
   }
 
   /**
@@ -176,7 +290,7 @@ class IPFSService {
    */
   async getFileSize(cid) {
     try {
-      const response = await fetch(`https://${cid}.ipfs.w3s.link/`, {
+      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`, {
         method: 'HEAD'
       });
 

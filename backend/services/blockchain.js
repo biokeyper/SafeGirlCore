@@ -17,7 +17,7 @@ class BlockchainService {
     try {
       logger.logBlockchain('Submit Report', 'pending', {
         ipfsHash,
-        responseCount: responses.length
+        responseCount: responses ? responses.length : 0
       });
 
       // Validate inputs
@@ -25,15 +25,27 @@ class BlockchainService {
         throw new Error('Invalid IPFS hash');
       }
 
-      if (!Array.isArray(responses) || responses.length !== 5) {
-        throw new Error('Must provide exactly 5 responses');
+      // If responses not provided or incomplete, pad with empty strings
+      let finalResponses = responses || [];
+      if (!Array.isArray(finalResponses)) {
+        finalResponses = [];
+      }
+
+      // Pad to exactly 5 responses (for reports without survey answers)
+      while (finalResponses.length < 5) {
+        finalResponses.push('');
+      }
+
+      // Trim to 5 if more than 5
+      if (finalResponses.length > 5) {
+        finalResponses = finalResponses.slice(0, 5);
       }
 
       // Get contract instance
       const contract = contractManager.getContract();
 
-      // Call submitReport function
-      const tx = await contract.submitReport(ipfsHash, responses);
+      // Call submitReport function with finalized responses array
+      const tx = await contract.submitReport(ipfsHash, finalResponses);
 
       logger.info('BLOCKCHAIN', 'Transaction sent', {
         txHash: tx.hash,
