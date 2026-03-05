@@ -65,6 +65,19 @@ router.get('/contacts', async (req, res, next) => {
 });
 
 /**
+ * PUT /api/emergency/edit-contact/:contactId
+ * Edit an emergency contact's details
+ * Body: { phone?, name?, relationship? }
+ */
+router.put('/edit-contact/:contactId', async (req, res, next) => {
+  try {
+    await panicController.editEmergencyContact(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * DELETE /api/emergency/remove-contact/:contactId
  * Remove an emergency contact
  */

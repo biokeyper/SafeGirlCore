@@ -11,6 +11,37 @@ const logger = require('../utils/logger');
 class PanicController {
 
   /**
+   * Normalize phone number to E.164 format (+COUNTRYCODEXXXXXXXXX)
+   * Removes spaces, dashes, and other non-digits
+   * Converts local format (0XXXXXXXXX) to international
+   * @private
+   */
+  normalizePhoneNumber(phone) {
+    if (!phone) return null;
+
+    // Remove all non-digit characters (spaces, dashes, etc.)
+    let normalized = phone.replace(/\D/g, '');
+
+    // If starts with 0 (local format), replace with country code from env
+    if (normalized.startsWith('0')) {
+      const countryCode = process.env.COUNTRY_CODE || '256'; // Default to Uganda
+      normalized = countryCode + normalized.substring(1);
+    }
+
+    // Ensure it has the + prefix for E.164 format
+    if (!normalized.startsWith('+')) {
+      normalized = '+' + normalized;
+    }
+
+    logger.debug('PANIC', 'Phone normalized', {
+      original: phone,
+      normalized
+    });
+
+    return normalized;
+  }
+
+  /**
    * Send panic alert
    * POST /api/panic-alert
    *
@@ -129,44 +160,71 @@ class PanicController {
 
   /**
    * Process panic alert in background
-   * 1. Send to blockchain
-   * 2. Update DB with tx hash
-   * 3. Send SMS to emergency contacts
+   * PRIORITY ORDER:
+   * 1. Send SMS to emergency contacts (CRITICAL - fastest)
+   * 2. Send to blockchain (audit trail - can fail without affecting SMS)
+   * Both run in parallel, not sequential
    */
   async processPanicAlertBackground(userId, locationData, alertId) {
     try {
       logger.info('PANIC', 'Background processing started', { userId, alertId });
 
-      // ========== Send to blockchain ==========
-      const tx = await blockchainService.sendPanicAlert(locationData);
+      // ========== PRIORITY 1: Send SMS immediately (independent of blockchain) ==========
+      // Start SMS immediately - don't wait for blockchain
+      const smsPromise = this.sendEmergencyContactAlerts(userId, locationData)
+        .then(() => {
+          logger.success('PANIC', 'Emergency SMS alerts sent', {
+            userId,
+            alertId
+          });
+        })
+        .catch(err => {
+          logger.error('PANIC', 'SMS sending failed', {
+            userId,
+            alertId,
+            error: err.message
+          });
+        });
 
-      logger.success('PANIC', 'Panic alert sent to blockchain', {
-        userId,
-        alertId,
-        txHash: tx.txHash,
-        blockNumber: tx.blockNumber
-      });
+      // ========== PRIORITY 2: Send to blockchain (parallel, non-blocking) ==========
+      // Blockchain runs in parallel, doesn't block SMS
+      const blockchainPromise = blockchainService.sendPanicAlert(locationData)
+        .then(tx => {
+          logger.success('PANIC', 'Panic alert sent to blockchain', {
+            userId,
+            alertId,
+            txHash: tx.txHash,
+            blockNumber: tx.blockNumber
+          });
 
-      // ========== Update DB with blockchain info ==========
-      await databaseService.updatePanicAlert(alertId, {
-        txHash: tx.txHash,
-        blockNumber: tx.blockNumber,
-        status: 'confirmed'
-      });
+          // Update DB with blockchain info
+          return databaseService.updatePanicAlert(alertId, {
+            txHash: tx.txHash,
+            blockNumber: tx.blockNumber,
+            status: 'confirmed'
+          });
+        })
+        .then(() => {
+          logger.success('PANIC', 'Panic alert updated with blockchain tx', {
+            userId,
+            alertId
+          });
+        })
+        .catch(err => {
+          logger.error('PANIC', 'Blockchain processing failed', {
+            userId,
+            alertId,
+            error: err.message
+          });
+          // Note: SMS was already sent even if blockchain fails
+        });
 
-      logger.success('PANIC', 'Panic alert updated with blockchain tx', {
-        userId,
-        alertId,
-        txHash: tx.txHash
-      });
-
-      // ========== Send SMS to emergency contacts ==========
-      await this.sendEmergencyContactAlerts(userId, locationData);
+      // Wait for both to complete, but don't fail if either fails
+      await Promise.allSettled([smsPromise, blockchainPromise]);
 
       logger.success('PANIC', 'Background processing completed', {
         userId,
-        alertId,
-        txHash: tx.txHash
+        alertId
       });
 
     } catch (error) {
@@ -277,13 +335,25 @@ class PanicController {
       const smsResults = [];
       for (let contact of contactsResult.rows) {
         try {
+          // Normalize phone before sending (defensive - remove spaces, format correctly)
+          const normalizedPhone = this.normalizePhoneNumber(contact.phone);
+
+          if (!normalizedPhone) {
+            logger.warn('PANIC', 'Invalid phone number, skipping', {
+              userId,
+              phone: contact.phone
+            });
+            smsResults.push({ phone: contact.phone, sent: false, error: 'Invalid phone number' });
+            continue;
+          }
+
           // Send SMS via email service (Twilio integration)
-          const result = await emailService.sendSMS(contact.phone, fullMessage);
-          smsResults.push({ phone: contact.phone, sent: true });
+          const result = await emailService.sendSMS(normalizedPhone, fullMessage);
+          smsResults.push({ phone: normalizedPhone, sent: true });
 
           logger.info('PANIC', 'Emergency SMS sent', {
             userId,
-            phone: contact.phone,
+            phone: normalizedPhone,
             name: contact.name
           });
 
@@ -395,26 +465,37 @@ class PanicController {
 
       logger.logRequest('POST', '/api/emergency/add-contact', { userId, phone });
 
-      // Check if contact already exists
+      // Normalize phone number (remove spaces, dashes, etc.)
+      const normalizedPhone = this.normalizePhoneNumber(phone);
+
+      if (!normalizedPhone) {
+        logger.warn('PANIC', 'Invalid phone number', { userId, phone });
+        return res.status(400).json({
+          error: true,
+          message: 'Invalid phone number'
+        });
+      }
+
+      // Check if contact already exists (by normalized phone)
       const existingResult = await databaseService.query(
         'SELECT id FROM emergency_contacts WHERE userid = $1 AND phone = $2',
-        [userId, phone]
+        [userId, normalizedPhone]
       );
 
       if (existingResult.rows && existingResult.rows.length > 0) {
-        logger.warn('PANIC', 'Emergency contact already exists', { userId, phone });
+        logger.warn('PANIC', 'Emergency contact already exists', { userId, phone: normalizedPhone });
         return res.status(409).json({
           error: true,
           message: 'This contact is already in your emergency list'
         });
       }
 
-      // Add emergency contact
+      // Add emergency contact with normalized phone
       const result = await databaseService.query(
         `INSERT INTO emergency_contacts (userid, phone, name, relationship, isactive, createdat, updatedat)
          VALUES ($1, $2, $3, $4, true, NOW(), NOW())
          RETURNING id, phone, name, relationship, isactive, createdat`,
-        [userId, phone, name || null, relationship || null]
+        [userId, normalizedPhone, name || null, relationship || null]
       );
 
       if (!result.rows || result.rows.length === 0) {
@@ -490,6 +571,108 @@ class PanicController {
 
     } catch (error) {
       logger.error('PANIC', 'Remove emergency contact error', { error: error.message });
+      next(error);
+    }
+  }
+
+  /**
+   * Edit emergency contact details
+   * PUT /api/emergency/edit-contact/:contactId
+   */
+  async editEmergencyContact(req, res, next) {
+    try {
+      const { contactId } = req.params;
+      const { phone, name, relationship } = req.body;
+      const userId = req.user.userId;
+
+      logger.logRequest('PUT', '/api/emergency/edit-contact/:contactId', {
+        userId,
+        contactId
+      });
+
+      // Verify contact belongs to user before editing
+      const checkResult = await databaseService.query(
+        'SELECT id, phone FROM emergency_contacts WHERE id = $1 AND userid = $2',
+        [contactId, userId]
+      );
+
+      if (!checkResult.rows || checkResult.rows.length === 0) {
+        logger.warn('PANIC', 'Emergency contact not found', { userId, contactId });
+        return res.status(404).json({
+          error: true,
+          message: 'Emergency contact not found'
+        });
+      }
+
+      const oldPhone = checkResult.rows[0].phone;
+
+      // Normalize phone if provided
+      let normalizedPhone = oldPhone;
+      if (phone) {
+        normalizedPhone = this.normalizePhoneNumber(phone);
+
+        if (!normalizedPhone) {
+          logger.warn('PANIC', 'Invalid phone number', { userId, phone });
+          return res.status(400).json({
+            error: true,
+            message: 'Invalid phone number'
+          });
+        }
+
+        // Check if new phone already exists for this user (but different contact)
+        if (normalizedPhone !== oldPhone) {
+          const existingResult = await databaseService.query(
+            'SELECT id FROM emergency_contacts WHERE userid = $1 AND phone = $2 AND id != $3',
+            [userId, normalizedPhone, contactId]
+          );
+
+          if (existingResult.rows && existingResult.rows.length > 0) {
+            logger.warn('PANIC', 'Phone already exists for another contact', { userId, phone: normalizedPhone });
+            return res.status(409).json({
+              error: true,
+              message: 'This phone number is already in your emergency list'
+            });
+          }
+        }
+      }
+
+      // Update emergency contact
+      const result = await databaseService.query(
+        `UPDATE emergency_contacts
+         SET phone = $1, name = $2, relationship = $3, updatedat = NOW()
+         WHERE id = $4 AND userid = $5
+         RETURNING id, phone, name, relationship, isactive, createdat, updatedat`,
+        [normalizedPhone, name || null, relationship || null, contactId, userId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('Failed to update emergency contact');
+      }
+
+      const contact = result.rows[0];
+
+      logger.success('PANIC', 'Emergency contact updated', {
+        userId,
+        contactId,
+        phone: contact.phone
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Emergency contact updated successfully',
+        data: {
+          contactId: contact.id,
+          phone: contact.phone,
+          name: contact.name,
+          relationship: contact.relationship,
+          isActive: contact.isactive,
+          createdAt: contact.createdat,
+          updatedAt: contact.updatedat
+        }
+      });
+
+    } catch (error) {
+      logger.error('PANIC', 'Edit emergency contact error', { error: error.message });
       next(error);
     }
   }
