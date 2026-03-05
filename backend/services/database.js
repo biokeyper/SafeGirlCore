@@ -178,7 +178,7 @@ class DatabaseService {
       const query = `
         INSERT INTO submissions (
           reportId, txHash, ipfsHash, responses,
-          blockNumber, gasUsed, status, metadata, userId,
+          blockNumber, gasUsed, status, metadata, userid,
           encryptionKey, encryptionKeyIv, encryptionKeyAuthTag,
           encryptionDataIv, encryptionDataAuthTag
         )
@@ -609,6 +609,59 @@ class DatabaseService {
 
     } catch (error) {
       logger.error('DATABASE', 'Failed to archive report', {
+        error: error.message,
+        reportId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Unarchive a report (restore archived report)
+   * @param {string} reportId - Report ID to unarchive
+   * @returns {Promise<object>} Unarchived submission
+   */
+  async unarchiveReport(reportId) {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      logger.info('DATABASE', 'Unarchiving report', { reportId });
+
+      const query = `
+        UPDATE submissions
+        SET isArchived = FALSE,
+            archivedAt = NULL,
+            archivedReason = NULL,
+            updatedAt = CURRENT_TIMESTAMP
+        WHERE reportId = $1
+        RETURNING *;
+      `;
+
+      const result = await this.pool.query(query, [reportId]);
+
+      if (result.rows.length === 0) {
+        logger.warn('DATABASE', 'Report not found for unarchival', { reportId });
+        return null;
+      }
+
+      logger.success('DATABASE', 'Report unarchived', { reportId });
+
+      // Log the unarchival
+      await this.logAudit(
+        reportId,
+        'isArchived',
+        'true',
+        'false',
+        'user_unarchive',
+        'api'
+      );
+
+      return result.rows[0];
+
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to unarchive report', {
         error: error.message,
         reportId
       });
@@ -1134,12 +1187,12 @@ class DatabaseService {
     try {
       const { userId, isRead, type, limit = 20, offset = 0 } = filters;
 
-      let query = 'SELECT * FROM notifications WHERE userId = $1';
+      let query = 'SELECT * FROM notifications WHERE userid = $1';
       const params = [userId];
       let paramCount = 2;
 
       if (isRead !== undefined) {
-        query += ` AND isRead = $${paramCount}`;
+        query += ` AND isread = $${paramCount}`;
         params.push(isRead);
         paramCount++;
       }
@@ -1151,18 +1204,18 @@ class DatabaseService {
       }
 
       const countResult = await this.query(
-        `SELECT COUNT(*) FROM notifications WHERE userId = $1${isRead !== undefined ? ' AND isRead = $2' : ''}${type ? ` AND type = $${isRead !== undefined ? 3 : 2}` : ''}`,
+        `SELECT COUNT(*) FROM notifications WHERE userid = $1${isRead !== undefined ? ' AND isread = $2' : ''}${type ? ` AND type = $${isRead !== undefined ? 3 : 2}` : ''}`,
         isRead !== undefined && type ? [userId, isRead, type] : isRead !== undefined ? [userId, isRead] : type ? [userId, type] : [userId]
       );
       const total = parseInt(countResult.rows[0].count);
 
       const result = await this.query(
-        `${query} ORDER BY createdAt DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
+        `${query} ORDER BY createdat DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
         [...params, limit, offset]
       );
 
       const unreadResult = await this.query(
-        'SELECT COUNT(*) FROM notifications WHERE userId = $1 AND isRead = FALSE',
+        'SELECT COUNT(*) FROM notifications WHERE userid = $1 AND isread = FALSE',
         [userId]
       );
 
@@ -1187,7 +1240,7 @@ class DatabaseService {
       const { userId, type, title, message, relatedId } = data;
 
       const result = await this.query(
-        `INSERT INTO notifications (userId, type, title, message, relatedId)
+        `INSERT INTO notifications (userid, type, title, message, relatedid)
          VALUES ($1, $2, $3, $4, $5) RETURNING *`,
         [userId, type, title, message, relatedId || null]
       );
@@ -1208,8 +1261,8 @@ class DatabaseService {
   async markNotificationAsRead(notificationId, userId) {
     try {
       const result = await this.query(
-        `UPDATE notifications SET isRead = TRUE, readAt = CURRENT_TIMESTAMP
-         WHERE id = $1 AND userId = $2 RETURNING *`,
+        `UPDATE notifications SET isread = TRUE, readat = CURRENT_TIMESTAMP
+         WHERE id = $1 AND userid = $2 RETURNING *`,
         [notificationId, userId]
       );
 
@@ -1228,8 +1281,8 @@ class DatabaseService {
   async markAllNotificationsAsRead(userId) {
     try {
       const result = await this.query(
-        `UPDATE notifications SET isRead = TRUE, readAt = CURRENT_TIMESTAMP
-         WHERE userId = $1 AND isRead = FALSE RETURNING id`,
+        `UPDATE notifications SET isread = TRUE, readat = CURRENT_TIMESTAMP
+         WHERE userid = $1 AND isread = FALSE RETURNING id`,
         [userId]
       );
 
@@ -1249,7 +1302,7 @@ class DatabaseService {
   async deleteNotification(notificationId, userId) {
     try {
       const result = await this.query(
-        `DELETE FROM notifications WHERE id = $1 AND userId = $2 RETURNING id`,
+        `DELETE FROM notifications WHERE id = $1 AND userid = $2 RETURNING id`,
         [notificationId, userId]
       );
 
@@ -1268,7 +1321,7 @@ class DatabaseService {
   async getUnreadNotificationCount(userId) {
     try {
       const result = await this.query(
-        'SELECT COUNT(*) FROM notifications WHERE userId = $1 AND isRead = FALSE',
+        'SELECT COUNT(*) FROM notifications WHERE userid = $1 AND isread = FALSE',
         [userId]
       );
 

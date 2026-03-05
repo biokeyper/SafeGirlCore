@@ -7,7 +7,7 @@ const reportController = require('../controllers/reportController');
 const authMiddleware = require('../middleware/auth');
 const { validateSubmitReport, validateStatusRequest } = require('../middleware/validation');
 
-router.post('/submitReport', validateSubmitReport, async (req, res, next) => {
+router.post('/submitReport', authMiddleware, validateSubmitReport, async (req, res, next) => {
   try {
     await reportController.submitReport(req, res, next);
   } catch (error) {
@@ -27,6 +27,14 @@ router.get('/reportStatus', validateStatusRequest, async (req, res, next) => {
 router.post('/report/:reportId/archive', async (req, res, next) => {
   try {
     await reportController.archiveReport(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/report/:reportId/unarchive', async (req, res, next) => {
+  try {
+    await reportController.unarchiveReport(req, res, next);
   } catch (error) {
     next(error);
   }

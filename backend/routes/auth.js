@@ -228,4 +228,21 @@ router.post('/delete-account', authMiddleware, async (req, res, next) => {
   }
 });
 
+/**
+ * LOGOUT
+ */
+
+/**
+ * POST /api/auth/logout
+ * Authenticated user logs out
+ * Protected endpoint - requires valid JWT token
+ */
+router.post('/logout', authMiddleware, async (req, res, next) => {
+  try {
+    await authController.logout(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

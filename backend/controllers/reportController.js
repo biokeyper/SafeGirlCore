@@ -90,8 +90,8 @@ class ReportController {
 
       let dbRecord;
       try {
-        // Get userId from wallet address (blockchain-verified identity)
-        const userId = blockchainService.getWalletAddress();
+        // Get userId from authenticated request (JWT token)
+        const userId = req.user.userId;
 
         dbRecord = await databaseService.saveSubmission({
           reportId,
@@ -114,6 +114,17 @@ class ReportController {
           reportId,
           dbId: dbRecord.id
         });
+
+        // Create notification for user
+        await databaseService.createNotification({
+          userId,
+          type: 'report_submitted',
+          title: 'Report Submitted',
+          message: 'Your report has been submitted successfully.',
+          relatedId: reportId
+        });
+
+        logger.success('REPORT', 'Notification created', { reportId, userId });
       } catch (dbError) {
         // Database save is critical - fail the entire submission
         logger.error('REPORT', 'Database save failed - blocking submission', {
@@ -418,14 +429,90 @@ class ReportController {
   }
 
   /**
+   * Unarchive a report
+   * Restore archived reports back to active
+   */
+  async unarchiveReport(req, res, next) {
+    try {
+      const { reportId } = req.params;
+
+      logger.logRequest('POST', `/api/report/${reportId}/unarchive`);
+
+      // Get userId for security
+      const userId = blockchainService.getWalletAddress();
+
+      // Check if report exists
+      const submission = await databaseService.getSubmission(reportId, userId);
+
+      if (!submission) {
+        logger.warn('REPORT', 'Report not found for unarchival', { reportId });
+        return res.status(404).json({
+          error: true,
+          message: 'Report not found'
+        });
+      }
+
+      if (!submission.isarchived) {
+        logger.warn('REPORT', 'Report is not archived', { reportId });
+        return res.status(400).json({
+          error: true,
+          message: 'Report is not archived'
+        });
+      }
+
+      // Unarchive the report
+      const unarchived = await databaseService.unarchiveReport(reportId);
+
+      logger.success('REPORT', 'Report unarchived', {
+        reportId,
+        userId
+      });
+
+      logger.logResponse('/api/report/unarchive', 200, 'Report unarchived');
+
+      res.status(200).json({
+        success: true,
+        message: 'Report restored to active',
+        data: {
+          reportId: unarchived.reportId,
+          status: unarchived.status,
+          isArchived: unarchived.isarchived,
+          archivedAt: unarchived.archivedat
+        }
+      });
+
+    } catch (error) {
+      logger.error('REPORT', 'Unarchive failed', {
+        error: error.message
+      });
+
+      res.status(500).json({
+        error: true,
+        message: 'Failed to unarchive report',
+        code: 'UNARCHIVE_ERROR'
+      });
+    }
+  }
+
+  /**
    * Health check endpoint
    */
   async healthCheck(req, res) {
     try {
       logger.logRequest('GET', '/health');
 
-      const walletAddress = blockchainService.getWalletAddress(); //gets wallets address
-      const contractAddress = blockchainService.getContractAddress();//gets contract address
+      // Safely get blockchain info without throwing if not initialized
+      let walletAddress = null;
+      let contractAddress = null;
+      let blockchainStatus = 'ready';
+
+      try {
+        walletAddress = blockchainService.getWalletAddress();
+        contractAddress = blockchainService.getContractAddress();
+      } catch (bcError) {
+        logger.warn('HEALTH', 'Blockchain not initialized', { error: bcError.message });
+        blockchainStatus = 'not_initialized';
+      }
 
       // Try to get database stats
       let dbStats = null;
@@ -441,7 +528,7 @@ class ReportController {
       }
 
       const health = {
-        status: dbStatus === 'error' ? 'degraded' : 'healthy',
+        status: (dbStatus === 'error' || blockchainStatus !== 'ready') ? 'degraded' : 'healthy',
         timestamp: new Date().toISOString(),
         backend: {
           wallet: walletAddress,
@@ -449,7 +536,7 @@ class ReportController {
         },
         services: {
           ipfs: 'ready',
-          blockchain: 'ready',
+          blockchain: blockchainStatus,
           database: dbStatus
         },
         stats: dbStats || null

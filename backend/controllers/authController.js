@@ -853,6 +853,44 @@ class AuthController {
       next(error);
     }
   }
+
+  /**
+   * Logout user
+   * POST /api/auth/logout
+   * Protected: User must be authenticated
+   *
+   * Note: JWT is stateless, so logout just confirms token removal on client side
+   * Token will expire after 7 days automatically
+   */
+  async logout(req, res, next) {
+    try {
+      const userId = req.user?.userId;
+
+      logger.logRequest('POST', '/api/auth/logout', { userId });
+
+      if (!userId) {
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
+
+      logger.success('AUTH', 'User logged out', { userId });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Successfully logged out',
+        data: {
+          userId,
+          loggedOutAt: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      logger.error('AUTH', 'Logout error', { error: error.message });
+      next(error);
+    }
+  }
 }
 
 module.exports = new AuthController();

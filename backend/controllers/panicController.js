@@ -244,7 +244,7 @@ class PanicController {
     try {
       // Get user's custom panic message
       const userResult = await databaseService.query(
-        'SELECT email, customPanicMessage FROM users WHERE userid = $1',
+        'SELECT email, custompanicmessage FROM users WHERE userid = $1',
         [userId]
       );
 
@@ -257,7 +257,7 @@ class PanicController {
 
       // Get active emergency contacts
       const contactsResult = await databaseService.query(
-        'SELECT phone, name FROM emergency_contacts WHERE userId = $1 AND isActive = true',
+        'SELECT phone, name FROM emergency_contacts WHERE userid = $1 AND isactive = true',
         [userId]
       );
 
@@ -267,7 +267,7 @@ class PanicController {
       }
 
       // Build message with custom panic message or default
-      const panicMessage = user.customPanicMessage ||
+      const panicMessage = user.custompanicmessage ||
         'Emergency alert from SafeGirl! I need help urgently!';
 
       const mapLink = `https://maps.google.com/?q=${encodeURIComponent(locationData)}`;
@@ -326,7 +326,7 @@ class PanicController {
 
       // Update user's custom panic message
       const result = await databaseService.query(
-        'UPDATE users SET customPanicMessage = $1 WHERE userid = $2 RETURNING customPanicMessage',
+        'UPDATE users SET custompanicmessage = $1 WHERE userid = $2 RETURNING custompanicmessage',
         [message, userId]
       );
 
@@ -339,7 +339,7 @@ class PanicController {
       return res.status(200).json({
         success: true,
         message: 'Panic message set successfully',
-        data: { panicMessage: result.rows[0].customPanicMessage }
+        data: { panicMessage: result.rows[0].custompanicmessage }
       });
 
     } catch (error) {
@@ -359,7 +359,7 @@ class PanicController {
       logger.logRequest('GET', '/api/emergency/panic-message', { userId });
 
       const result = await databaseService.query(
-        'SELECT customPanicMessage FROM users WHERE userid = $1',
+        'SELECT custompanicmessage FROM users WHERE userid = $1',
         [userId]
       );
 
@@ -367,7 +367,7 @@ class PanicController {
         throw new Error('User not found');
       }
 
-      const panicMessage = result.rows[0].customPanicMessage || null;
+      const panicMessage = result.rows[0].custompanicmessage || null;
 
       return res.status(200).json({
         success: true,
@@ -397,7 +397,7 @@ class PanicController {
 
       // Check if contact already exists
       const existingResult = await databaseService.query(
-        'SELECT id FROM emergency_contacts WHERE userId = $1 AND phone = $2',
+        'SELECT id FROM emergency_contacts WHERE userid = $1 AND phone = $2',
         [userId, phone]
       );
 
@@ -411,9 +411,9 @@ class PanicController {
 
       // Add emergency contact
       const result = await databaseService.query(
-        `INSERT INTO emergency_contacts (userId, phone, name, relationship, isActive, createdAt, updatedAt)
+        `INSERT INTO emergency_contacts (userid, phone, name, relationship, isactive, createdat, updatedat)
          VALUES ($1, $2, $3, $4, true, NOW(), NOW())
-         RETURNING id, phone, name, relationship, isActive, createdAt`,
+         RETURNING id, phone, name, relationship, isactive, createdat`,
         [userId, phone, name || null, relationship || null]
       );
 
@@ -463,7 +463,7 @@ class PanicController {
 
       // Verify contact belongs to user before deleting
       const checkResult = await databaseService.query(
-        'SELECT id FROM emergency_contacts WHERE id = $1 AND userId = $2',
+        'SELECT id FROM emergency_contacts WHERE id = $1 AND userid = $2',
         [contactId, userId]
       );
 
@@ -505,10 +505,10 @@ class PanicController {
       logger.logRequest('GET', '/api/emergency/contacts', { userId });
 
       const result = await databaseService.query(
-        `SELECT id, phone, name, relationship, isActive, createdAt
+        `SELECT id, phone, name, relationship, isactive, createdat
          FROM emergency_contacts
-         WHERE userId = $1
-         ORDER BY createdAt DESC`,
+         WHERE userid = $1
+         ORDER BY createdat DESC`,
         [userId]
       );
 

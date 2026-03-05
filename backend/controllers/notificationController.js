@@ -68,6 +68,14 @@ class NotificationController {
         total: result.total
       });
 
+      // DEBUG: Log raw database response
+      if (result.notifications.length > 0) {
+        logger.info('NOTIFICATION', 'Raw DB notification:', {
+          firstNotification: result.notifications[0],
+          keys: Object.keys(result.notifications[0])
+        });
+      }
+
       res.status(200).json({
         success: true,
         message: 'Notifications retrieved',
@@ -77,10 +85,10 @@ class NotificationController {
             type: n.type,
             title: n.title,
             message: n.message,
-            relatedId: n.relatedId,
-            isRead: n.isRead,
-            createdAt: n.createdAt,
-            readAt: n.readAt
+            relatedId: n.relatedid,
+            isRead: n.isread,
+            createdAt: n.createdat,
+            readAt: n.readat
           })),
           pagination: {
             total: result.total,
