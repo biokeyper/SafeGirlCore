@@ -308,6 +308,48 @@ class IPFSService {
       return null;
     }
   }
+
+  /**
+   * Download encrypted data from IPFS
+   * @param {string} cid - Content Identifier (IPFS hash)
+   * @returns {Promise<string>} Encrypted data as hex string
+   */
+  async downloadFromIPFS(cid) {
+    try {
+      if (!cid) {
+        throw new Error('CID is required');
+      }
+
+      const url = `${this.gatewayUrl}/${cid}`;
+
+      logger.info('IPFS', 'Downloading from IPFS', { cid, url });
+
+      const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 30000
+      });
+
+      if (!response.data) {
+        throw new Error('No data received from IPFS');
+      }
+
+      // Convert buffer to hex string for decryption
+      const hexData = Buffer.from(response.data).toString('hex');
+
+      logger.success('IPFS', 'Downloaded from IPFS successfully', {
+        cid,
+        size: response.data.length
+      });
+
+      return hexData;
+    } catch (error) {
+      logger.error('IPFS', 'Failed to download from IPFS', {
+        cid,
+        error: error.message
+      });
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

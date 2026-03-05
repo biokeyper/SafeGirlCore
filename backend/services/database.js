@@ -161,6 +161,7 @@ class DatabaseService {
         responses,
         blockNumber,
         gasUsed,
+        status = 'pending',
         metadata = null,
         userId = null,
         // Backend encryption fields
@@ -193,7 +194,7 @@ class DatabaseService {
         responses ? JSON.stringify(responses) : null,
         blockNumber,
         gasUsed,
-        'pending', // Initial status
+        status,
         metadata ? JSON.stringify(metadata) : null,
         userId,
         encryptionKey,
@@ -840,11 +841,11 @@ class DatabaseService {
       const submission = result.rows[0];
 
       // Decrypt the encryption key with master key
-      if (submission.encryptionKey && submission.encryptionKeyIv && submission.encryptionKeyAuthTag) {
+      if (submission.encryptionkey && submission.encryptionkeyiv && submission.encryptionkeyauthtag) {
         const reportKey = encryptionService.decryptKey(
-          submission.encryptionKey,
-          submission.encryptionKeyIv,
-          submission.encryptionKeyAuthTag,
+          submission.encryptionkey,
+          submission.encryptionkeyiv,
+          submission.encryptionkeyauthtag,
           reportId
         );
 

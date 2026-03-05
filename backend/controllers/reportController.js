@@ -100,6 +100,7 @@ class ReportController {
           responses,
           blockNumber: blockchainResult.blockNumber,
           gasUsed: blockchainResult.gasUsed,
+          status: 'confirmed',  // Blockchain confirmed, so mark as confirmed
           metadata,
           userId,
           // Encryption key information (backend-encrypted)
@@ -618,14 +619,16 @@ class ReportController {
         });
       }
 
-      // Decrypt the data from IPFS (encrypted payload is the raw data)
-      // Note: In real implementation, you'd fetch the encrypted data from IPFS first
-      // For now, we decrypt what was stored
+      // Fetch encrypted data from IPFS
+      logger.info('REPORT', 'Fetching encrypted data from IPFS', { ipfsHash: submission.ipfshash });
+      const encryptedData = await ipfsService.downloadFromIPFS(submission.ipfshash);
+
+      // Decrypt the data
       const decryptedPayload = await encryptionService.decryptPayload(
-        submission.encryptedDataFromIPFS || '', // Would come from IPFS in real app
+        encryptedData,
         submission.reportKey,
-        submission.encryptionDataIv,
-        submission.encryptionDataAuthTag,
+        submission.encryptiondataiv,
+        submission.encryptiondataauthtag,
         reportId
       );
 
