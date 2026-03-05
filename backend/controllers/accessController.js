@@ -44,6 +44,15 @@ class AccessController {
         });
       }
 
+      // Check if trying to grant access to self
+      if (grantToUserId === reporterUserId) {
+        logger.warn('ACCESS', 'Cannot grant access to self', { reportId, userId: reporterUserId });
+        return res.status(400).json({
+          error: true,
+          message: 'Cannot grant access to yourself - you already own this report'
+        });
+      }
+
       // Check if reporter owns the report
       const submission = await databaseService.getSubmission(reportId, reporterUserId);
       if (!submission) {
@@ -60,30 +69,17 @@ class AccessController {
         ? new Date(Date.now() + expiresIn * 1000)
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days default
 
-      // Get wallet addresses for smart contract call
-      const reporterWallet = blockchainService.getWalletAddress();
-      const viewerWallet = grantToUserId; // In real app, resolve userId to wallet address
+      logger.info('ACCESS', 'Granting access to user', { reportId, grantToUserId });
 
-      logger.info('ACCESS', 'Granting access on blockchain', { reportId, grantToUserId });
-
-      // Call smart contract to grant access
-      // Note: Contract expects viewer address (Polygon wallet address, not userId)
-      // In production, you'd need to map userId to actual blockchain wallet address
-      const tx = await blockchainService.grantAccess(viewerWallet, Math.floor(expiresAt.getTime() / 1000));
-
-      logger.success('ACCESS', 'Access granted on blockchain', {
-        reportId,
-        grantToUserId,
-        txHash: tx.txHash
-      });
-
-      // Save to database
+      // Save to database only
+      // Note: Access control is handled in database, not blockchain
+      // Blockchain records the report; database controls who can view it
       const access = await databaseService.grantAccess({
         reportId,
         reporterId: reporterUserId,
         viewerId: grantToUserId,
         expiresAt,
-        txHash: tx.txHash
+        txHash: null  // No blockchain transaction for access control
       });
 
       logger.success('ACCESS', 'Access saved to database', {
@@ -96,10 +92,10 @@ class AccessController {
         success: true,
         message: 'Access granted successfully',
         data: {
+          accessId: access.id,
           reportId,
           grantedTo: grantToUserId,
-          expiresAt: expiresAt.toISOString(),
-          txHash: tx.txHash
+          expiresAt: expiresAt.toISOString()
         }
       });
 
@@ -159,22 +155,11 @@ class AccessController {
         });
       }
 
-      // Get wallet address for smart contract call
-      const viewerWallet = revokeFromUserId;
+      logger.info('ACCESS', 'Revoking access from database', { reportId, revokeFromUserId });
 
-      logger.info('ACCESS', 'Revoking access on blockchain', { reportId, revokeFromUserId });
-
-      // Call smart contract to revoke access
-      const tx = await blockchainService.revokeAccess(viewerWallet);
-
-      logger.success('ACCESS', 'Access revoked on blockchain', {
-        reportId,
-        revokeFromUserId,
-        txHash: tx.txHash
-      });
-
-      // Update database
-      const access = await databaseService.revokeAccess(reportId, revokeFromUserId, tx.txHash);
+      // Revoke access in database only
+      // Note: Access control is handled in database, not blockchain
+      const access = await databaseService.revokeAccess(reportId, revokeFromUserId);
 
       logger.success('ACCESS', 'Access revoked in database', {
         reportId,
@@ -186,8 +171,7 @@ class AccessController {
         message: 'Access revoked successfully',
         data: {
           reportId,
-          revokedFrom: revokeFromUserId,
-          txHash: tx.txHash
+          revokedFrom: revokeFromUserId
         }
       });
 

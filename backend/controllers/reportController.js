@@ -641,8 +641,12 @@ class ReportController {
           reportId,
           status: submission.status,
           ...decryptedPayload,
-          createdAt: submission.createdAt,
-          confirmedAt: submission.confirmedAt
+          timestamps: {
+            createdAt: submission.createdat,
+            submittedAt: submission.createdat,
+            confirmedAt: submission.confirmedat,
+            updatedAt: submission.updatedat
+          }
         }
       });
 
