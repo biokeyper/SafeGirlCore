@@ -28,12 +28,13 @@ COPY . .
 # Expose port 3001 (tells Docker this container listens on 3001)
 EXPOSE 3001
 
-# Set environment to production
-ENV NODE_ENV=production
+# Set environment to development (for nodemon hot reload)
+ENV NODE_ENV=development
 
 # Health check - Docker will periodically check if server is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3001/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
 # Command to run when container starts
-CMD ["npm", "start"]
+# Use 'dev' script which runs nodemon for auto-restart on file changes
+CMD ["npm", "run", "dev"]

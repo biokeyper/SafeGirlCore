@@ -41,6 +41,19 @@ router.post('/revoke', async (req, res, next) => {
 });
 
 /**
+ * GET /api/access/my-shared-reports
+ * Get all reports I've shared with others
+ * Protected: User must be authenticated
+ */
+router.get('/my-shared-reports', async (req, res, next) => {
+  try {
+    await accessController.getMySharedReports(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/access/shared-with-me
  * Get all reports shared with the authenticated user
  * Protected: User must be authenticated

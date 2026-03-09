@@ -320,8 +320,9 @@ class AuthController {
         'phone_recovery'
       );
 
-      // Build recovery link
-      const recoveryLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/recovery?token=${tokenResult.token}`;
+      // Build recovery deep link for mobile app
+      const appScheme = process.env.APP_SCHEME || 'safegirl';
+      const recoveryLink = `${appScheme}://recovery/${tokenResult.token}`;
 
       // Send recovery email
       const emailSent = await emailService.sendRecoveryEmail(email, recoveryLink);

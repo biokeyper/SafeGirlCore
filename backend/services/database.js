@@ -745,10 +745,11 @@ class DatabaseService {
   async getSharedReports(viewerId) {
     try {
       const result = await this.query(
-        `SELECT ra.reportId, ra.reporterId, ra.grantedAt, ra.expiresAt, ra.isActive
+        `SELECT ra.reportid, ra.reporterid, ra.grantedat, ra.expiresat, ra.isactive, u.phone, u.email
          FROM report_access ra
-         WHERE ra.viewerId = $1 AND ra.isActive = TRUE
-         ORDER BY ra.grantedAt DESC`,
+         JOIN users u ON ra.reporterid = u.userid
+         WHERE ra.viewerid = $1 AND ra.isactive = TRUE
+         ORDER BY ra.grantedat DESC`,
         [viewerId]
       );
 
@@ -775,10 +776,11 @@ class DatabaseService {
   async getReportViewers(reportId, reporterId) {
     try {
       const result = await this.query(
-        `SELECT ra.viewerId, ra.grantedAt, ra.expiresAt, ra.isActive
+        `SELECT ra.viewerid, ra.grantedat, ra.expiresat, ra.isactive, u.phone, u.email
          FROM report_access ra
-         WHERE ra.reportId = $1 AND ra.reporterId = $2 AND ra.isActive = TRUE
-         ORDER BY ra.grantedAt DESC`,
+         JOIN users u ON ra.viewerid = u.userid
+         WHERE ra.reportid = $1 AND ra.reporterid = $2 AND ra.isactive = TRUE
+         ORDER BY ra.grantedat DESC`,
         [reportId, reporterId]
       );
 
@@ -790,6 +792,67 @@ class DatabaseService {
       return result.rows;
     } catch (error) {
       logger.error('DATABASE', 'Failed to get report viewers', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all reports owned by a user that have been shared with others
+   * @param {string} reporterId - Reporter's user ID
+   * @returns {Promise<array>} Array of reports with access info
+   */
+  async getMySharedReports(reporterId) {
+    try {
+      const result = await this.query(
+        `SELECT
+           s.reportid,
+           s.createdat,
+           s.status,
+           COUNT(CASE WHEN ra.isactive = TRUE THEN 1 END) AS viewercount
+         FROM submissions s
+         LEFT JOIN report_access ra ON s.reportid = ra.reportid
+         WHERE s.userid = $1
+         GROUP BY s.reportid, s.createdat, s.status
+         ORDER BY s.createdat DESC`,
+        [reporterId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        logger.success('DATABASE', 'User has no shared reports', { reporterId });
+        return [];
+      }
+
+      // For each report, get detailed viewer info
+      const reportsWithViewers = [];
+      for (const report of result.rows) {
+        const viewersResult = await this.query(
+          `SELECT ra.viewerid, ra.grantedat, ra.expiresat, ra.isactive, u.phone, u.email
+           FROM report_access ra
+           JOIN users u ON ra.viewerid = u.userid
+           WHERE ra.reportid = $1 AND ra.reporterid = $2
+           ORDER BY ra.grantedat DESC`,
+          [report.reportid, reporterId]
+        );
+
+        reportsWithViewers.push({
+          reportId: report.reportid,
+          createdAt: report.createdat,
+          status: report.status,
+          viewerCount: parseInt(report.viewercount),
+          viewers: viewersResult.rows || []
+        });
+      }
+
+      logger.success('DATABASE', 'Retrieved user\'s shared reports', {
+        reporterId,
+        reportCount: reportsWithViewers.length
+      });
+
+      return reportsWithViewers;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get user\'s shared reports', {
         error: error.message
       });
       throw error;

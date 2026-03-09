@@ -189,6 +189,66 @@ class AccessController {
   }
 
   /**
+   * Get all reports I've shared with others
+   * GET /api/access/my-shared-reports
+   */
+  async getMySharedReports(req, res, next) {
+    try {
+      const reporterUserId = req.user?.userId;
+
+      logger.logRequest('GET', '/api/access/my-shared-reports', {});
+
+      if (!reporterUserId) {
+        logger.warn('ACCESS', 'User not authenticated', {});
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
+
+      // Get all reports owned by user with access info
+      const mySharedReports = await databaseService.getMySharedReports(reporterUserId);
+
+      logger.success('ACCESS', 'Retrieved user\'s shared reports', {
+        reporterId: reporterUserId,
+        reportCount: mySharedReports.length
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'My shared reports retrieved',
+        data: {
+          reports: mySharedReports.map(report => ({
+            reportId: report.reportId,
+            createdAt: report.createdAt,
+            status: report.status,
+            viewerCount: report.viewerCount,
+            viewers: report.viewers.map(viewer => ({
+              viewerId: viewer.viewerid || viewer.viewerId,
+              phone: viewer.phone,
+              email: viewer.email,
+              grantedAt: viewer.grantedat || viewer.grantedAt,
+              expiresAt: viewer.expiresat || viewer.expiresAt,
+              isActive: viewer.isactive || viewer.isActive
+            }))
+          }))
+        }
+      });
+
+    } catch (error) {
+      logger.error('ACCESS', 'Get my shared reports failed', {
+        error: error.message
+      });
+
+      res.status(500).json({
+        error: true,
+        message: 'Failed to retrieve my shared reports',
+        code: 'GET_MY_SHARED_FAILED'
+      });
+    }
+  }
+
+  /**
    * Get all reports shared with the authenticated user
    * GET /api/access/shared-with-me
    */
@@ -218,12 +278,14 @@ class AccessController {
         success: true,
         message: 'Shared reports retrieved',
         data: {
-          sharedReports: sharedReports.map(access => ({
-            reportId: access.reportId,
-            reporterId: access.reporterId,
-            grantedAt: access.grantedAt,
-            expiresAt: access.expiresAt,
-            isActive: access.isActive
+          reports: sharedReports.map(access => ({
+            reportId: access.reportid || access.reportId,
+            reporterId: access.reporterid || access.reporterId,
+            reporterPhone: access.phone,
+            reporterEmail: access.email,
+            grantedAt: access.grantedat || access.grantedAt,
+            expiresAt: access.expiresat || access.expiresAt,
+            isActive: access.isactive || access.isActive
           }))
         }
       });
@@ -284,10 +346,12 @@ class AccessController {
         data: {
           reportId,
           viewers: viewers.map(access => ({
-            viewerId: access.viewerId,
-            grantedAt: access.grantedAt,
-            expiresAt: access.expiresAt,
-            isActive: access.isActive
+            viewerId: access.viewerid || access.viewerId,
+            phone: access.phone,
+            email: access.email,
+            grantedAt: access.grantedat || access.grantedAt,
+            expiresAt: access.expiresat || access.expiresAt,
+            isActive: access.isactive || access.isActive
           }))
         }
       });

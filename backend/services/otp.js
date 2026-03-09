@@ -132,6 +132,14 @@ class OTPService {
 
       logger.info('OTP', `Creating ${otpType} OTP for ${phone}`);
 
+      // Log the generated OTP code prominently for development/testing
+      logger.success('OTP', `🔐 Generated OTP Code: ${otpCode}`, {
+        phone,
+        otpType,
+        expiresInMinutes: this.OTP_EXPIRY_MINUTES,
+        note: 'Use this code to complete signup/login'
+      });
+
       // Store OTP in database
       const result = await databaseService.query(
         `INSERT INTO otps (userId, phone, otp_code, otp_type, expires_at)

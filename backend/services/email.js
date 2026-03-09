@@ -275,20 +275,22 @@ Your privacy and safety are our top priority.
       }
 
       const subject = 'SafeGirl - Verify Your Email Address';
-      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?email=${encodeURIComponent(recipientEmail)}&userId=${userId}`;
+      // Deep link format for mobile app: APP_SCHEME://verify-email/email/userId
+      const appScheme = process.env.APP_SCHEME || 'safegirl';
+      const verificationLink = `${appScheme}://verify-email/${encodeURIComponent(recipientEmail)}/${userId}`;
 
       const htmlContent = `
         <h2>Verify Your Email Address</h2>
         <p>Thank you for adding an email address to your SafeGirl account!</p>
 
-        <p>Click the button below to verify your email address:</p>
+        <p>Click the button below to verify your email address (opens SafeGirl app):</p>
         <p>
           <a href="${verificationLink}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             Verify Email Address
           </a>
         </p>
 
-        <p>Or copy and paste this link in your browser:</p>
+        <p>Or copy and paste this link:</p>
         <p>${verificationLink}</p>
 
         <p><strong>⏱️ This link expires in 24 hours.</strong></p>
