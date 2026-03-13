@@ -63,6 +63,16 @@ class AccessController {
         });
       }
 
+      // Check if target user exists
+      const targetUser = await databaseService.getUser(grantToUserId);
+      if (!targetUser) {
+        logger.warn('ACCESS', 'Target user does not exist', { grantToUserId });
+        return res.status(404).json({
+          error: true,
+          message: 'User does not exist'
+        });
+      }
+
       // Calculate expiry time
       const now = Math.floor(Date.now() / 1000);
       const expiresAt = expiresIn
@@ -155,6 +165,16 @@ class AccessController {
         });
       }
 
+      // Check if target user exists
+      const targetUser = await databaseService.getUser(revokeFromUserId);
+      if (!targetUser) {
+        logger.warn('ACCESS', 'Target user does not exist', { revokeFromUserId });
+        return res.status(404).json({
+          error: true,
+          message: 'User does not exist'
+        });
+      }
+
       logger.info('ACCESS', 'Revoking access from database', { reportId, revokeFromUserId });
 
       // Revoke access in database only
@@ -209,20 +229,18 @@ class AccessController {
       // Get all reports owned by user with access info
       const mySharedReports = await databaseService.getMySharedReports(reporterUserId);
 
-      logger.success('ACCESS', 'Retrieved user\'s shared reports', {
-        reporterId: reporterUserId,
-        reportCount: mySharedReports.length
-      });
-
-      res.status(200).json({
-        success: true,
-        message: 'My shared reports retrieved',
-        data: {
-          reports: mySharedReports.map(report => ({
+      // Fetch full submission data for each shared report
+      const reportsWithContent = [];
+      for (const report of mySharedReports) {
+        const submission = await databaseService.getSubmission(report.reportId, reporterUserId);
+        if (submission) {
+          reportsWithContent.push({
             reportId: report.reportId,
             createdAt: report.createdAt,
             status: report.status,
             viewerCount: report.viewerCount,
+            responses: submission.responses,
+            metadata: submission.metadata,
             viewers: report.viewers.map(viewer => ({
               viewerId: viewer.viewerid || viewer.viewerId,
               phone: viewer.phone,
@@ -231,7 +249,20 @@ class AccessController {
               expiresAt: viewer.expiresat || viewer.expiresAt,
               isActive: viewer.isactive || viewer.isActive
             }))
-          }))
+          });
+        }
+      }
+
+      logger.success('ACCESS', 'Retrieved user\'s shared reports', {
+        reporterId: reporterUserId,
+        reportCount: reportsWithContent.length
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'My shared reports retrieved',
+        data: {
+          reports: reportsWithContent
         }
       });
 
@@ -269,24 +300,37 @@ class AccessController {
       // Get all active access grants for this user
       const sharedReports = await databaseService.getSharedReports(viewerUserId);
 
-      logger.success('ACCESS', 'Retrieved shared reports', {
-        viewerId: viewerUserId,
-        reportCount: sharedReports.length
-      });
-
-      res.status(200).json({
-        success: true,
-        message: 'Shared reports retrieved',
-        data: {
-          reports: sharedReports.map(access => ({
+      // Fetch full submission data for each shared report
+      const reportsWithContent = [];
+      for (const access of sharedReports) {
+        const submission = await databaseService.getSubmission(access.reportid, viewerUserId);
+        if (submission) {
+          reportsWithContent.push({
             reportId: access.reportid || access.reportId,
             reporterId: access.reporterid || access.reporterId,
             reporterPhone: access.phone,
             reporterEmail: access.email,
             grantedAt: access.grantedat || access.grantedAt,
             expiresAt: access.expiresat || access.expiresAt,
-            isActive: access.isactive || access.isActive
-          }))
+            isActive: access.isactive || access.isActive,
+            status: submission.status,
+            createdAt: submission.createdat,
+            responses: submission.responses,
+            metadata: submission.metadata
+          });
+        }
+      }
+
+      logger.success('ACCESS', 'Retrieved shared reports', {
+        viewerId: viewerUserId,
+        reportCount: reportsWithContent.length
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Shared reports retrieved',
+        data: {
+          reports: reportsWithContent
         }
       });
 
@@ -432,15 +476,15 @@ class AccessController {
         success: true,
         message: 'Report retrieved',
         data: {
-          reportId: report.reportId,
+          reportId: report.reportid || report.reportId,
           status: report.status,
-          txHash: report.txHash,
-          ipfsHash: report.ipfsHash,
+          txHash: report.txhash || report.txHash,
+          ipfsHash: report.ipfshash || report.ipfsHash,
           responses: report.responses,
           metadata: report.metadata,
-          createdAt: report.createdAt,
-          confirmedAt: report.confirmedAt,
-          gasUsed: report.gasUsed
+          createdAt: report.createdat || report.createdAt,
+          confirmedAt: report.confirmedat || report.confirmedAt,
+          gasUsed: report.gasused || report.gasUsed
         }
       });
 

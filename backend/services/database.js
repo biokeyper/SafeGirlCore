@@ -6,6 +6,8 @@
 
 const logger = require('../utils/logger');
 const crypto = require('crypto');
+const encryptionService = require('./encryption');
+const ipfsService = require('./ipfs');
 
 class DatabaseService {
   constructor() {
@@ -229,9 +231,9 @@ class DatabaseService {
         throw new Error('Database not initialized');
       }
 
-      logger.debug('DATABASE', 'Fetching submission', { reportId });
+      logger.debug('DATABASE', 'Fetching submission', { reportId, userId });
 
-      const query = 'SELECT * FROM submissions WHERE reportId = $1;';
+      const query = 'SELECT * FROM submissions WHERE reportid = $1;';
       const result = await this.pool.query(query, [reportId]);
 
       if (result.rows.length === 0) {
@@ -241,19 +243,70 @@ class DatabaseService {
 
       let submission = result.rows[0];
 
-      // ========== DECRYPT SENSITIVE DATA ==========
-      // Decrypt responses and metadata using userId-based key
-      const decryptionUserId = userId || reportId;
+      // ========== VALIDATE OWNERSHIP ==========
+      // If userId is provided, ensure user owns the report or has access to it
+      if (userId) {
+        const userOwnedReport = submission.userid === userId;
+        let userHasSharedAccess = false;
 
-      if (submission.responses) {
-        submission.responses = this.decrypt(submission.responses, decryptionUserId);
+        // Check if user has been granted access to this report
+        if (!userOwnedReport) {
+          const accessQuery = `
+            SELECT id FROM report_access
+            WHERE reportid = $1 AND viewerid = $2 AND isactive = TRUE
+            AND (expiresat IS NULL OR expiresat > NOW())
+          `;
+          const accessResult = await this.pool.query(accessQuery, [reportId, userId]);
+          userHasSharedAccess = accessResult.rows.length > 0;
+        }
+
+        if (!userOwnedReport && !userHasSharedAccess) {
+          logger.warn('DATABASE', 'User does not have access to report', { reportId, userId });
+          return null;
+        }
       }
 
-      if (submission.metadata) {
-        submission.metadata = this.decrypt(submission.metadata, decryptionUserId);
+      // ========== FETCH FROM IPFS IF RESPONSES ARE NULL ==========
+      // Content is stored encrypted on IPFS, not in database
+      if (!submission.responses && !submission.metadata && submission.ipfshash && submission.encryptionkey) {
+        try {
+          logger.info('DATABASE', 'Responses/metadata null - fetching from IPFS', { reportId, ipfsHash: submission.ipfshash });
+
+          // Download encrypted data from IPFS
+          const encryptedDataHex = await ipfsService.downloadFromIPFS(submission.ipfshash);
+
+          // Decrypt the encryption key (note: PostgreSQL returns lowercase column names)
+          const reportKey = encryptionService.decryptKey(
+            submission.encryptionkey || submission.encryptionKey,
+            submission.encryptionkeyiv || submission.encryptionKeyIv,
+            submission.encryptionkeyauthtag || submission.encryptionKeyAuthTag,
+            reportId
+          );
+
+          // Decrypt the payload
+          const decrypted = await encryptionService.decryptPayload(
+            encryptedDataHex,
+            reportKey,
+            submission.encryptiondataiv || submission.encryptionDataIv,
+            submission.encryptiondataauthtag || submission.encryptionDataAuthTag,
+            reportId
+          );
+
+          // Extract responses and metadata from decrypted payload
+          submission.responses = decrypted.responses || null;
+          submission.metadata = decrypted.metadata || null;
+
+          logger.success('DATABASE', 'Fetched and decrypted payload from IPFS', { reportId });
+        } catch (ipfsError) {
+          logger.warn('DATABASE', 'Failed to fetch from IPFS', {
+            reportId,
+            error: ipfsError.message
+          });
+          // Continue with null responses/metadata if IPFS fails
+        }
       }
 
-      logger.success('DATABASE', 'Submission retrieved (decrypted)', { reportId });
+      logger.success('DATABASE', 'Submission retrieved', { reportId });
       return submission;
 
     } catch (error) {
@@ -262,6 +315,32 @@ class DatabaseService {
         reportId
       });
       throw error;
+    }
+  }
+
+  /**
+   * Get user by ID
+   * @param {string} userId - User ID
+   * @returns {Promise<object|null>} User record or null if not found
+   */
+  async getUser(userId) {
+    try {
+      const result = await this.query(
+        'SELECT userid, phone, email, pin FROM users WHERE userid = $1',
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get user', {
+        error: error.message,
+        userId
+      });
+      return null;
     }
   }
 
@@ -680,9 +759,9 @@ class DatabaseService {
       const { reportId, reporterId, viewerId, expiresAt, txHash } = accessData;
 
       const result = await this.query(
-        `INSERT INTO report_access (reportId, reporterId, viewerId, expiresAt, isActive)
+        `INSERT INTO report_access (reportid, reporterid, viewerid, expiresat, isactive)
          VALUES ($1, $2, $3, $4, TRUE)
-         RETURNING id, reportId, viewerId, grantedAt, expiresAt, isActive`,
+         RETURNING id, reportid, viewerid, grantedat, expiresat, isactive`,
         [reportId, reporterId, viewerId, expiresAt]
       );
 
@@ -712,9 +791,9 @@ class DatabaseService {
     try {
       const result = await this.query(
         `UPDATE report_access
-         SET isActive = FALSE, revokedAt = CURRENT_TIMESTAMP
-         WHERE reportId = $1 AND viewerId = $2 AND isActive = TRUE
-         RETURNING id, reportId, viewerId, revokedAt, isActive`,
+         SET isactive = FALSE, revokedat = CURRENT_TIMESTAMP
+         WHERE reportid = $1 AND viewerid = $2 AND isactive = TRUE
+         RETURNING id, reportid, viewerid, revokedat, isactive`,
         [reportId, viewerId]
       );
 
@@ -748,7 +827,7 @@ class DatabaseService {
         `SELECT ra.reportid, ra.reporterid, ra.grantedat, ra.expiresat, ra.isactive, u.phone, u.email
          FROM report_access ra
          JOIN users u ON ra.reporterid = u.userid
-         WHERE ra.viewerid = $1 AND ra.isactive = TRUE
+         WHERE ra.viewerid = $1 AND ra.isactive = TRUE AND (ra.expiresat IS NULL OR ra.expiresat > NOW())
          ORDER BY ra.grantedat DESC`,
         [viewerId]
       );
@@ -815,6 +894,7 @@ class DatabaseService {
          LEFT JOIN report_access ra ON s.reportid = ra.reportid
          WHERE s.userid = $1
          GROUP BY s.reportid, s.createdat, s.status
+         HAVING COUNT(CASE WHEN ra.isactive = TRUE THEN 1 END) > 0
          ORDER BY s.createdat DESC`,
         [reporterId]
       );
@@ -1164,9 +1244,9 @@ class DatabaseService {
       const { userId, status, createdAfter, createdBefore, limit = 10, offset = 0 } = filters;
 
       let query = `
-        SELECT reportId, status, createdAt, confirmedAt, txHash, ipfsHash
+        SELECT reportid, status, createdat, confirmedat, txhash, ipfshash
         FROM submissions
-        WHERE walletAddress = $1
+        WHERE userid = $1
       `;
       const params = [userId];
 
@@ -1176,12 +1256,12 @@ class DatabaseService {
       }
 
       if (createdAfter) {
-        query += ` AND createdAt >= $${params.length + 1}`;
+        query += ` AND createdat >= $${params.length + 1}`;
         params.push(createdAfter);
       }
 
       if (createdBefore) {
-        query += ` AND createdAt <= $${params.length + 1}`;
+        query += ` AND createdat <= $${params.length + 1}`;
         params.push(createdBefore);
       }
 
@@ -1190,13 +1270,20 @@ class DatabaseService {
       const total = parseInt(countResult.rows[0].count);
 
       // Get paginated results
-      query += ` ORDER BY createdAt DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      query += ` ORDER BY createdat DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
       params.push(limit, offset);
 
       const result = await this.query(query, params);
 
       return {
-        reports: result.rows || [],
+        reports: result.rows.map(r => ({
+          reportId: r.reportid,
+          status: r.status,
+          createdAt: r.createdat,
+          confirmedAt: r.confirmedat,
+          txHash: r.txhash,
+          ipfsHash: r.ipfshash
+        })) || [],
         total
       };
     } catch (error) {
@@ -1217,14 +1304,14 @@ class DatabaseService {
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed,
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-                SUM(CASE WHEN isArchived = TRUE THEN 1 ELSE 0 END) as archived
-         FROM submissions WHERE walletAddress = $1`,
+                SUM(CASE WHEN isarchived = TRUE THEN 1 ELSE 0 END) as archived
+         FROM submissions WHERE userid = $1`,
         [userId]
       );
 
       const row = result.rows[0];
       const sharedResult = await this.query(
-        `SELECT COUNT(*) FROM report_access WHERE viewerId = $1 AND isActive = TRUE`,
+        `SELECT COUNT(*) FROM report_access WHERE viewerid = $1 AND isactive = TRUE`,
         [userId]
       );
 

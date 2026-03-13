@@ -15,7 +15,7 @@ router.post('/submitReport', authMiddleware, validateSubmitReport, async (req, r
   }
 });
 
-router.get('/reportStatus', validateStatusRequest, async (req, res, next) => {
+router.get('/reportStatus', authMiddleware, validateStatusRequest, async (req, res, next) => {
   try {
     await reportController.getReportStatus(req, res, next);
   } catch (error) {
@@ -24,7 +24,7 @@ router.get('/reportStatus', validateStatusRequest, async (req, res, next) => {
 });
 
 //only hides reports from the lists in the library but doesnt delete it from blaockchain
-router.post('/report/:reportId/archive', async (req, res, next) => {
+router.post('/report/:reportId/archive', authMiddleware, async (req, res, next) => {
   try {
     await reportController.archiveReport(req, res, next);
   } catch (error) {
@@ -32,7 +32,7 @@ router.post('/report/:reportId/archive', async (req, res, next) => {
   }
 });
 
-router.post('/report/:reportId/unarchive', async (req, res, next) => {
+router.post('/report/:reportId/unarchive', authMiddleware, async (req, res, next) => {
   try {
     await reportController.unarchiveReport(req, res, next);
   } catch (error) {

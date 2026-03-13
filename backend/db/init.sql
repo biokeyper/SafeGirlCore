@@ -25,8 +25,10 @@ CREATE TABLE IF NOT EXISTS submissions (
   -- Status tracking
   status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, confirmed, failed
 
+  -- User ownership
+  userId VARCHAR(255),                  -- User who submitted the report
+
   -- Metadata
-  walletAddress VARCHAR(255),
   metadata JSONB,
 
   -- Timestamps
@@ -58,6 +60,9 @@ CREATE INDEX idx_submissions_txHash ON submissions(txHash);
 
 -- Create index on createdAt for time-based queries
 CREATE INDEX idx_submissions_createdAt ON submissions(createdAt DESC);
+
+-- Create index on userId for user-specific queries
+CREATE INDEX idx_submissions_userId ON submissions(userId);
 
 -- Create a function to automatically update the updatedAt timestamp
 CREATE OR REPLACE FUNCTION update_submissions_updated_at()

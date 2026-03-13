@@ -205,11 +205,17 @@ class ReportController {
   async getReportStatus(req, res, next) {
     try {
       const { reportId } = req.query;
+      const userId = req.user?.userId;
 
       logger.logRequest('GET', `/api/reportStatus?reportId=${reportId}`);
 
-      // Get userId for decryption (user's wallet address)
-      const userId = blockchainService.getWalletAddress();
+      if (!userId) {
+        logger.warn('REPORT', 'User not authenticated', {});
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
 
       // Query database for submission (fast)
       // Pass userId to decrypt responses and metadata
@@ -225,21 +231,23 @@ class ReportController {
       }
 
       // Build response (immediate, no waiting for blockchain)
+      // Note: PostgreSQL returns lowercase column names
       const statusResponse = {
         success: true,
         reportId,
         status: submission.status,
         message: `Report status: ${submission.status}`,
         data: {
-          reportId: submission.reportId,
+          reportId: submission.reportid || submission.reportId,
           status: submission.status,
-          txHash: submission.txHash,
-          ipfsHash: submission.ipfsHash,
-          blockNumber: submission.blockNumber,
+          txHash: submission.txhash || submission.txHash,
+          ipfsHash: submission.ipfshash || submission.ipfsHash,
+          blockNumber: submission.blocknumber || submission.blockNumber,
           confirmations: submission.confirmations || null,
-          createdAt: submission.createdAt,
-          confirmedAt: submission.confirmedAt,
-          gasUsed: submission.gasUsed
+          createdAt: submission.createdat || submission.createdAt,
+          confirmedAt: submission.confirmedat || submission.confirmedAt,
+          gasUsed: submission.gasused || submission.gasUsed,
+          isArchived: submission.isarchived || submission.isArchived
         }
       };
 
@@ -376,11 +384,17 @@ class ReportController {
     try {
       const { reportId } = req.params;
       const { reason } = req.body;
+      const userId = req.user?.userId;
 
       logger.logRequest('POST', `/api/report/${reportId}/archive`, { reason });
 
-      // Get userId for security
-      const userId = blockchainService.getWalletAddress();
+      if (!userId) {
+        logger.warn('REPORT', 'User not authenticated', {});
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
 
       // Check if report exists
       const submission = await databaseService.getSubmission(reportId, userId);
@@ -408,11 +422,11 @@ class ReportController {
         success: true,
         message: 'Report archived successfully (still on blockchain)',
         data: {
-          reportId: archived.reportId,
+          reportId: archived.reportid || archived.reportId,
           status: archived.status,
-          isArchived: archived.isArchived,
-          archivedAt: archived.archivedAt,
-          archivedReason: archived.archivedReason
+          isArchived: archived.isarchived || archived.isArchived,
+          archivedAt: archived.archivedat || archived.archivedAt,
+          archivedReason: archived.archivedreason || archived.archivedReason
         }
       });
 
@@ -436,11 +450,17 @@ class ReportController {
   async unarchiveReport(req, res, next) {
     try {
       const { reportId } = req.params;
+      const userId = req.user?.userId;
 
       logger.logRequest('POST', `/api/report/${reportId}/unarchive`);
 
-      // Get userId for security
-      const userId = blockchainService.getWalletAddress();
+      if (!userId) {
+        logger.warn('REPORT', 'User not authenticated', {});
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
 
       // Check if report exists
       const submission = await databaseService.getSubmission(reportId, userId);
@@ -475,10 +495,10 @@ class ReportController {
         success: true,
         message: 'Report restored to active',
         data: {
-          reportId: unarchived.reportId,
+          reportId: unarchived.reportid || unarchived.reportId,
           status: unarchived.status,
-          isArchived: unarchived.isarchived,
-          archivedAt: unarchived.archivedat
+          isArchived: unarchived.isarchived || unarchived.isArchived,
+          archivedAt: unarchived.archivedat || unarchived.archivedAt
         }
       });
 
