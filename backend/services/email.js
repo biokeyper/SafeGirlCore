@@ -276,7 +276,7 @@ Your privacy and safety are our top priority.
 
       const subject = 'SafeGirl - Verify Your Email Address';
       // Deep link format for mobile app: APP_SCHEME://verify-email/email/userId
-      const appScheme = process.env.APP_SCHEME || 'safegirl';
+      const appScheme = process.env.APP_SCHEME || 'safegirlapp';
       const verificationLink = `${appScheme}://verify-email/${encodeURIComponent(recipientEmail)}/${userId}`;
 
       const htmlContent = `
@@ -285,7 +285,7 @@ Your privacy and safety are our top priority.
 
         <p>Click the button below to verify your email address (opens SafeGirl app):</p>
         <p>
-          <a href="${verificationLink}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+          <a href="${verificationLink}" style="background-color: #8B5CF6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
             Verify Email Address
           </a>
         </p>

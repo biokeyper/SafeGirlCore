@@ -328,7 +328,20 @@ class PanicController {
       const panicMessage = user.custompanicmessage ||
         'Emergency alert from SafeGirl! I need help urgently!';
 
-      const mapLink = `https://maps.google.com/?q=${encodeURIComponent(locationData)}`;
+      // Parse location data to extract coordinates
+      let mapLink = '';
+      try {
+        const location = JSON.parse(locationData);
+        if (location.latitude && location.longitude) {
+          mapLink = `https://maps.google.com/?q=${location.latitude},${location.longitude}`;
+        } else {
+          mapLink = `https://maps.google.com/?q=${encodeURIComponent(locationData)}`;
+        }
+      } catch (e) {
+        // If not JSON, treat as raw coordinates or address
+        mapLink = `https://maps.google.com/?q=${encodeURIComponent(locationData)}`;
+      }
+
       const fullMessage = `${panicMessage}\n\nLocation: ${mapLink}`;
 
       // Send SMS to each emergency contact
