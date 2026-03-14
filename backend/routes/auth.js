@@ -182,6 +182,19 @@ router.post('/setup-email', authMiddleware, async (req, res, next) => {
 });
 
 /**
+ * GET /api/auth/verify-email
+ * Verify email address via deep link (public, no auth required)
+ * Query params: email, userId
+ */
+router.get('/verify-email', async (req, res, next) => {
+  try {
+    await authController.verifyEmailAddress(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * PIN MANAGEMENT
  */
 

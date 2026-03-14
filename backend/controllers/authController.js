@@ -856,6 +856,84 @@ class AuthController {
   }
 
   /**
+   * Verify Email Address
+   * GET /api/auth/verify-email
+   * Public endpoint - called from deep link in email verification
+   * Query params: email, userId
+   */
+  async verifyEmailAddress(req, res, next) {
+    try {
+      const { email, userId } = req.query;
+
+      logger.logRequest('GET', '/api/auth/verify-email', { email, userId });
+
+      if (!email || !userId) {
+        logger.warn('AUTH', 'Missing email or userId in verify-email', { email: !!email, userId: !!userId });
+        return res.status(400).json({
+          error: true,
+          message: 'email and userId are required'
+        });
+      }
+
+      // Check if user exists with this email and userId
+      const userResult = await databaseService.query(
+        'SELECT userid, email, email_verified FROM users WHERE userid = $1 AND email = $2',
+        [userId, email]
+      );
+
+      if (!userResult.rows || userResult.rows.length === 0) {
+        logger.warn('AUTH', 'User or email mismatch in verify-email', { userId, email });
+        return res.status(404).json({
+          error: true,
+          message: 'User or email not found'
+        });
+      }
+
+      const user = userResult.rows[0];
+
+      // Check if already verified
+      if (user.email_verified) {
+        logger.info('AUTH', 'Email already verified', { userId, email });
+        return res.status(200).json({
+          success: true,
+          message: 'Email is already verified',
+          data: {
+            userId,
+            email,
+            emailVerified: true
+          }
+        });
+      }
+
+      // Update email_verified status
+      const updateResult = await databaseService.query(
+        'UPDATE users SET email_verified = true WHERE userid = $1 RETURNING userid, email, email_verified',
+        [userId]
+      );
+
+      if (!updateResult.rows || updateResult.rows.length === 0) {
+        throw new Error('Failed to update email verification status');
+      }
+
+      logger.success('AUTH', 'Email verified successfully', { userId, email });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Email verified successfully',
+        data: {
+          userId,
+          email,
+          emailVerified: true
+        }
+      });
+
+    } catch (error) {
+      logger.error('AUTH', 'Email verification error', { error: error.message });
+      next(error);
+    }
+  }
+
+  /**
    * Logout user
    * POST /api/auth/logout
    * Protected: User must be authenticated

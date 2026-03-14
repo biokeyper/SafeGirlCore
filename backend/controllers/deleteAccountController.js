@@ -83,8 +83,8 @@ class DeleteAccountController {
 
       // 4. Delete report access grants (both as reporter and viewer)
       await databaseService.query(
-        'DELETE FROM report_access WHERE userid = $1 OR grantedto = $1',
-        [userId, userId]
+        'DELETE FROM report_access WHERE reporterid = $1 OR viewerid = $1',
+        [userId]
       );
       logger.info('DELETE_ACCOUNT', 'Deleted report access grants', { userId });
 
@@ -104,7 +104,7 @@ class DeleteAccountController {
 
       // 7. Delete OTP records
       await databaseService.query(
-        'DELETE FROM otp_records WHERE phone = $1',
+        'DELETE FROM otps WHERE phone = $1',
         [user.phone]
       );
       logger.info('DELETE_ACCOUNT', 'Deleted OTP records', { userId });
