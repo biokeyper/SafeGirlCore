@@ -176,16 +176,19 @@ class DatabaseService {
 
       logger.info('DATABASE', 'Saving submission', { reportId });
 
+      // Extract type from metadata (audio or text)
+      const reportType = metadata?.type || 'text';
+
       // Note: Payload is now encrypted by encryption service
       // Store encryption key info for decryption later
       const query = `
         INSERT INTO submissions (
           reportId, txHash, ipfsHash, responses,
-          blockNumber, gasUsed, status, metadata, userid,
+          blockNumber, gasUsed, status, confirmations, metadata, userid, type,
           encryptionKey, encryptionKeyIv, encryptionKeyAuthTag,
           encryptionDataIv, encryptionDataAuthTag
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING *;
       `;
 
@@ -197,8 +200,10 @@ class DatabaseService {
         blockNumber,
         gasUsed,
         status,
+        0, // confirmations - starts at 0
         metadata ? JSON.stringify(metadata) : null,
         userId,
+        reportType,
         encryptionKey,
         encryptionKeyIv,
         encryptionKeyAuthTag,

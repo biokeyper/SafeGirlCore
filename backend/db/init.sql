@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS submissions (
 
   -- Status tracking
   status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, confirmed, failed
+  confirmations INTEGER DEFAULT 0,               -- Blockchain confirmation count (0-12+)
+
+  -- Report type (audio or text)
+  type VARCHAR(50) DEFAULT 'text',      -- audio or text
 
   -- User ownership
   userId VARCHAR(255),                  -- User who submitted the report
@@ -63,6 +67,9 @@ CREATE INDEX idx_submissions_createdAt ON submissions(createdAt DESC);
 
 -- Create index on userId for user-specific queries
 CREATE INDEX idx_submissions_userId ON submissions(userId);
+
+-- Create index on type for filtering by report type (audio/text)
+CREATE INDEX idx_submissions_type ON submissions(type);
 
 -- Create a function to automatically update the updatedAt timestamp
 CREATE OR REPLACE FUNCTION update_submissions_updated_at()

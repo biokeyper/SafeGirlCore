@@ -1,6 +1,34 @@
 # SafeGirlCore
 The chain end of business
 
+---
+
+## 📚 Backend API Documentation
+
+**Live documentation is available on Docker!**
+
+```bash
+# Start all services
+docker compose up
+
+# Open in browser
+http://localhost:8888
+```
+
+This runs:
+- 🌐 **API Documentation (Swagger UI)**: http://localhost:8888
+- 🚀 **Backend API**: http://localhost:3001
+- 🗄️ **PostgreSQL Database**: localhost:5433
+
+**For detailed backend documentation, see:**
+- [Backend Docs Overview](backend/docs/README.md)
+- [OpenAPI Specification](backend/docs/openapi.yaml) - All 45 endpoints
+- [Architecture Guide](backend/docs/ARCHITECTURE.md) - System design & flows
+- [Setup Guide](backend/docs/SETUP.md) - Development & deployment
+- [Database Schema](backend/docs/DATABASE.md) - Complete schema reference
+
+---
+
 # SafeGirl Smart Contract - Technical Documentation
 
 ## Overview

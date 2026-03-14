@@ -2,7 +2,39 @@
 
 Comprehensive documentation for the SafeGirl backend API and system architecture.
 
-## Files
+---
+
+## 🚀 Live Documentation Server
+
+**API Documentation is running on Docker!**
+
+```
+📍 http://localhost:8888
+```
+
+Open your browser and explore the complete API with:
+- ✅ Interactive endpoint testing
+- ✅ Live request/response examples
+- ✅ Schema documentation
+- ✅ Authentication & rate limit details
+- ✅ Try it out functionality
+
+**Start all services:**
+```bash
+cd /home/mirembe/Desktop/Projects/SafeGirlCore
+docker compose up
+```
+
+This runs:
+- 🗄️ PostgreSQL database (port 5433)
+- 🚀 Backend API (port 3001)
+- 📚 API Documentation/Swagger UI (port 8888) ← **You are here**
+
+---
+
+## 📄 Documentation Files
+
+The following files are served by the documentation container and also available as offline references:
 
 ### 1. **openapi.yaml** (43 KB)
 Complete OpenAPI 3.0.3 specification with all 45 endpoints.
@@ -88,35 +120,36 @@ Complete database schema reference.
 
 ## Quick Links
 
-### For API Integration
-1. Start with **openapi.yaml** → import to Swagger UI
-2. Check **ARCHITECTURE.md** → understand encryption/blockchain flows
-3. Reference **SETUP.md** → environment variables and running server
+### 🌐 For API Integration
+1. **Open Swagger UI** → http://localhost:8888
+2. Try endpoints interactively (with request/response examples)
+3. Check **ARCHITECTURE.md** → understand encryption/blockchain flows
+4. Reference **SETUP.md** → environment variables and running server
 
-### For Database Queries
+### 💾 For Database Queries
 1. Review **DATABASE.md** → table schemas and relationships
 2. Check indexes and query patterns
 3. See design decisions for context
 
-### For Deployment
+### 🚀 For Deployment
 1. Follow **SETUP.md** → Deployment Checklist section
 2. Reference **ARCHITECTURE.md** → Deployment Topology section
 3. Check **DATABASE.md** → Backup & Recovery section
 
-### For Understanding Reports
-1. **ARCHITECTURE.md** → "Report Submission Pipeline" section
-2. **DATABASE.md** → "submissions" table documentation
-3. **openapi.yaml** → /api/submitReport and /api/reportStatus endpoints
+### 📤 For Understanding Reports
+1. **Swagger UI** → POST /api/submitReport and GET /api/reportStatus
+2. **ARCHITECTURE.md** → "Report Submission Pipeline" section
+3. **DATABASE.md** → "submissions" table documentation
 
-### For Understanding Panic Alerts
-1. **ARCHITECTURE.md** → "Non-Blocking Panic Alert Flow" section
-2. **DATABASE.md** → "panic_alerts" and "panic_audit_log" tables
-3. **openapi.yaml** → /api/panic-alert endpoints
+### 🚨 For Understanding Panic Alerts
+1. **Swagger UI** → /api/panic-alert endpoints
+2. **ARCHITECTURE.md** → "Non-Blocking Panic Alert Flow" section
+3. **DATABASE.md** → "panic_alerts" and "panic_audit_log" tables
 
-### For Understanding Access Control
-1. **ARCHITECTURE.md** → "Access Control Architecture" section
-2. **DATABASE.md** → "report_access" table
-3. **openapi.yaml** → /api/access/* endpoints
+### 🔐 For Understanding Access Control
+1. **Swagger UI** → /api/access/* endpoints
+2. **ARCHITECTURE.md** → "Access Control Architecture" section
+3. **DATABASE.md** → "report_access" table
 
 ## Statistics
 
@@ -188,16 +221,35 @@ Complete database schema reference.
 
 ## Next Steps
 
-1. **Import openapi.yaml to Swagger UI** for interactive exploration
-2. **Follow SETUP.md** to start development
-3. **Reference DATABASE.md** when querying
-4. **Review ARCHITECTURE.md** for design decisions
-5. **Check deployment checklist** before production
+1. **Start Docker services:**
+   ```bash
+   docker compose up
+   ```
+
+2. **Open API documentation:**
+   ```
+   http://localhost:8888
+   ```
+
+3. **Try endpoints:**
+   - Click on any endpoint to expand
+   - Click "Try it out" to test live
+   - View request/response examples
+
+4. **For deeper understanding:**
+   - **System design** → Read `ARCHITECTURE.md`
+   - **Database schema** → Read `DATABASE.md`
+   - **Development setup** → Read `SETUP.md`
+
+5. **Before production:**
+   - Review deployment checklist in `SETUP.md`
+   - Check security section in `ARCHITECTURE.md`
 
 ## Support
 
 For questions about:
-- **API Usage**: See openapi.yaml examples
+- **API Usage**: Check Swagger UI at http://localhost:8888 or see openapi.yaml
 - **Database Queries**: See DATABASE.md table reference
-- **Architecture**: See ARCHITECTURE.md sections
-- **Setup Issues**: See SETUP.md troubleshooting
+- **Architecture & Design**: See ARCHITECTURE.md sections
+- **Setup & Troubleshooting**: See SETUP.md
+- **Offline Reference**: All markdown files are in this directory
