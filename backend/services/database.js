@@ -437,6 +437,40 @@ class DatabaseService {
   }
 
   /**
+   * Update confirmations count for a pending report
+   * @param {string} reportId - Report ID
+   * @param {number} confirmations - Number of confirmations
+   * @returns {Promise<void>}
+   */
+  async updateConfirmations(reportId, confirmations) {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const query = `
+        UPDATE submissions
+        SET confirmations = $2, updatedAt = CURRENT_TIMESTAMP
+        WHERE reportid = $1
+      `;
+
+      await this.pool.query(query, [reportId, confirmations]);
+
+      logger.debug('DATABASE', 'Confirmations updated', {
+        reportId,
+        confirmations
+      });
+
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to update confirmations', {
+        error: error.message,
+        reportId
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get all submissions with optional filters
    * @param {object} filters - { status, limit, offset, userId }
    * @returns {Promise<array>} Array of submissions with decrypted data

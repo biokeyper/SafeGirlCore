@@ -10,6 +10,7 @@ const contractManager = require('./config/contracts');
 const eventListener = require('./services/eventListener');
 const ipfsService = require('./services/ipfs');
 const databaseService = require('./services/database');
+const confirmationScheduler = require('./services/confirmationScheduler');
 
 const reportRoutes = require('./routes/reports');
 const authRoutes = require('./routes/auth');
@@ -72,7 +73,11 @@ async function initializeServices() {
       logger.warn('SERVER', 'Email service not initialized - recovery emails will not be sent');
     }
 
-    // 5. Start event listener (disabled - using database logging instead of blockchain filters)
+    // 5. Start confirmation scheduler (updates pending reports and marks confirmed)
+    logger.logServer('Starting confirmation scheduler...');
+    confirmationScheduler.start();
+
+    // 6. Start event listener (disabled - using database logging instead of blockchain filters)
     // logger.logServer('Starting event listener...');
     // await eventListener.startListening();
 
@@ -196,6 +201,7 @@ async function startServer() {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   logger.logServer('Shutdown signal received...');
+  confirmationScheduler.stop();
   eventListener.stopListening();
   await databaseService.close();
   logger.logServer('Server stopped');
@@ -204,6 +210,7 @@ process.on('SIGINT', async () => {
 
 process.on('SIGTERM', async () => {
   logger.logServer('Termination signal received...');
+  confirmationScheduler.stop();
   eventListener.stopListening();
   await databaseService.close();
   logger.logServer('Server stopped');
