@@ -36,7 +36,7 @@ That's it! Your development environment is ready.
 
 ## Documentation Map
 
-This root `README.md` is the primary onboarding and operating document.
+This  `README.md` is the primary onboarding and operating document.
 
 Use it for:
 
@@ -44,15 +44,6 @@ Use it for:
 - API overview and key request examples
 - Current architecture + backend internals
 - Smart contract integration summary
-
-Optional deep-dive docs under `backend/docs/`:
-
-- `backend/docs/ARCHITECTURE.md` (extended architecture notes and historical rationale)
-- `backend/docs/DATABASE.md` (database-focused details)
-- `backend/docs/SETUP.md` (backend-specific setup walkthrough)
-- `backend/docs/openapi.yaml` (source OpenAPI spec used by Swagger UI)
-
-If there is any mismatch between docs, treat this root `README.md` as the current source of truth.
 
 ---
 
@@ -251,8 +242,8 @@ SafeGirl is a women's safety reporting platform with:
 1. User hits panic → alert inserted to DB immediately
 2. Return 200 OK with alertId + status="pending"
 3. Background processing (async, non-blocking):
-   a. Blockchain confirmation (2-5 sec)
-   b. SMS notifications to emergency contacts (rate-limited)
+   a. Save to DB
+   b. SMS notifications to emergency contacts (rate-limited) and at the same time Blockchain confirmation (2-5 sec)
    c. Audit logging
 4. If background fails, alert still exists in DB for recovery
 ```
@@ -262,7 +253,7 @@ SafeGirl is a women's safety reporting platform with:
 - **Grant Access**: Instant DB insert (no blockchain wait)
 - **Revoke Access**: Instant DB update (no blockchain wait)
 - **View Report**: Check DB access table before decryption
-- **Why DB-only**: Blockchain is slow (2-5 sec), users expect instant revocation
+- **Why DB-only**: Since we are using one wallet address(company address) we cant use access control on blockchain since it only understands wallert addreses not userids 
 
 ### Blockchain Integration
 
@@ -377,7 +368,7 @@ Example request: `POST /api/panic-alert`
 │ │ ipfsHash         │ │
 │ │ txHash           │ │
 │ │ status (pending/ │ │
-│ │  confirmed/fail) │ │
+│ │  submitted/fail) │ │
 │ │ encryptionKey*   │ │
 │ └──────────────────┘ │
 └──────────────────────┘
@@ -424,7 +415,7 @@ encryptionDataIv       - Data encryption IV (hex)
 encryptionDataAuthTag  - Data auth tag (hex)
 isArchived             - Boolean (soft-delete)
 createdAt              - Submission time
-confirmedAt            - Blockchain confirmation time
+submittedAt            - Blockchain confirmation time
 ```
 
 #### `report_access` (Access Control)
@@ -490,7 +481,6 @@ readAt                 - Read time
 #### Additional Tables
 
 - `recovery_tokens` - Email-based account recovery (24h expiry)
-- `key_backups` - Encrypted backup of encryption keys
 - `submission_audit_log` - Tracks all changes to submissions
 - `panic_audit_log` - Tracks panic alert actions for audit trail
 - `tampering_alerts` - Detects DB/blockchain mismatches
@@ -510,10 +500,7 @@ readAt                 - Read time
 
 **Why access control is DB-only:**
 
-- Blockchain grants/revokes are slow (2-5 sec)
-- Users expect instant revocation
-- Database checks before decryption
-- Also since we have one wallet address we cant use access control from the blockhain as it requires wallet addresses
+-Since we have one wallet address we cant use access control from the blockhain as it requires wallet addresses
 
 **Why isArchived instead of deletion:**
 
@@ -551,7 +538,7 @@ npm run deploy
 
 ### Environment Variables
 
-Create `.env` in `backend/` directory:
+Create `.env` in `backend/` directory also use .env.example to get the structure :
 
 ```env
 # Database
@@ -798,8 +785,4 @@ MIT
 
 ---
 
-**For detailed file references:**
 
-- Backend docs: `/backend/docs/`
-- Smart contract: `/contracts/SafeGirl.sol`
-- Database migrations: `/backend/db/migrations/`

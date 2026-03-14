@@ -1607,30 +1607,6 @@ paths:
         '200':
           description: Notification deleted
 
-  # ========== KEY RECOVERY ENDPOINTS ==========
-
-  /api/keys/backup:
-    post:
-      summary: Backup encryption key with PIN
-      operationId: backupKeyWithPin
-      tags: [Key Recovery]
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BackupKeyRequest'
-      responses:
-        '200':
-          description: Key backed up
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BackupKeyResponse'
-
-  /api/keys/recover:
     post:
       summary: Recover encryption key using PIN and phone
       operationId: recoverKeyWithPin

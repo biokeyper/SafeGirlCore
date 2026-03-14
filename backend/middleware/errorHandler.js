@@ -16,14 +16,12 @@ function errorHandler(err, req, res, next) {
     code: 'UNKNOWN_ERROR'
   };
 
-  // Log error
   logger.error('ERROR_HANDLER', 'Unhandled error', {
     message: err.message,
     code: err.code,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 
-  // Handle specific error types
   if (err.message.includes('IPFS')) {
     errorResponse.code = 'IPFS_ERROR';
     errorResponse.message = 'Failed to upload to IPFS. Please try again.';

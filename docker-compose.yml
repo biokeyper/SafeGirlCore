@@ -103,7 +103,7 @@ services:
 
     volumes:
       # Mount the OpenAPI spec file
-      - ./backend/docs/openapi.yaml:/usr/share/nginx/html/api/openapi.yaml:ro
+      - ./openapi.yaml:/usr/share/nginx/html/api/openapi.yaml:ro
 
     networks:
       - safegirl-network

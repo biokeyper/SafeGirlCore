@@ -169,7 +169,7 @@ class IPFSService {
 
       logger.info('IPFS', 'Starting retrieval', { cid });
 
-      // Retrieve file from IPFS via NFT.storage gateway
+      // Retrieve file from IPFS via Pinata gateway
       const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
 
       if (!response.ok) {

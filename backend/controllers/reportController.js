@@ -1,6 +1,6 @@
 /**
  * Report Controller
- * handles IPFS upload + blockchain submission
+ * Handles submission, status, archival, and decryption flows for reports.
  */
 
 const ipfsService = require("../services/ipfs");
@@ -22,9 +22,10 @@ class ReportController {
       const userId = req.user?.userId;
 
       // Parse payload JSON string
-      const payloadObj = typeof payloadString === 'string'
-        ? JSON.parse(payloadString)
-        : payloadString;
+      const payloadObj =
+        typeof payloadString === "string"
+          ? JSON.parse(payloadString)
+          : payloadString;
 
       let { payload, responses, metadata } = payloadObj;
 
@@ -53,9 +54,7 @@ class ReportController {
         hasMetadata: !!metadata,
       });
 
-      // ========== STEP 1: Backend Encryption ==========
-      // Frontend sends unencrypted JSON payload
-      // Backend encrypts it before uploading to IPFS
+      // Encrypt payload before storing it on IPFS.
       logger.info("REPORT", "Encrypting payload with backend key", {
         reportId,
       });
@@ -79,7 +78,7 @@ class ReportController {
       // Convert encrypted data to buffer for IPFS upload
       const payloadBuffer = Buffer.from(encryptionResult.encryptedData, "hex");
 
-      // ========== STEP 2: Upload to IPFS ==========
+      // Upload encrypted payload to IPFS.
       logger.info("REPORT", "Uploading to IPFS", {
         reportId,
         payloadSize: payloadBuffer.length,
@@ -95,7 +94,7 @@ class ReportController {
         ipfsHash,
       });
 
-      // ========== STEP 2B: Upload Audio to IPFS (if present) ==========
+      // Upload audio separately when present.
       if (audioFile) {
         logger.info("REPORT", "Uploading audio to IPFS", {
           reportId,
@@ -121,7 +120,7 @@ class ReportController {
         metadata.audioGatewayUrl = `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}`;
       }
 
-      // ========== STEP 3: Call Smart Contract ==========
+      // Submit report metadata to the smart contract.
       logger.info("REPORT", "Submitting to blockchain", {
         reportId,
         ipfsHash,
@@ -142,9 +141,7 @@ class ReportController {
         blockNumber: blockchainResult.blockNumber,
       });
 
-      // ========== STEP 4: Save to Database ==========
-      // Critical: Database must sync with blockchain
-      // If DB is down, we fail the entire submission to avoid orphaned records
+      // Persist synchronized submission record in the database.
       logger.info("REPORT", "Saving to database", { reportId, txHash });
 
       let dbRecord;
@@ -183,15 +180,13 @@ class ReportController {
 
         logger.success("REPORT", "Notification created", { reportId, userId });
       } catch (dbError) {
-        // Database save is critical - fail the entire submission
         logger.error("REPORT", "Database save failed - blocking submission", {
           reportId,
           txHash,
           error: dbError.message,
         });
 
-        // Warning: txHash is on blockchain but not in database yet
-        // This is a critical error - database sync issue
+        // Blockchain write succeeded but DB write failed: treat as sync failure.
         const dbSyncError = new Error(
           `Database synchronization failed. Report recorded on blockchain (${txHash}) but not in database. ` +
             `Please contact support with txHash.`,
@@ -200,34 +195,30 @@ class ReportController {
         throw dbSyncError;
       }
 
-      // ========== STEP 5: Return Success Response ==========
-      const successResponse = {
-        success: true,
+      // Return one canonical payload shape: success + message + data.
+      const successData = {
         reportId,
         txHash,
         ipfsHash,
         ipfsGatewayUrl: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-        ...(audioIpfsHash && { audioIpfsHash }),
-        ...(audioIpfsHash && { audioGatewayUrl: `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}` }),
-        type: metadata?.type || 'text',
+        ...(audioIpfsHash && {
+          audioIpfsHash,
+          audioGatewayUrl: `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}`,
+        }),
+        type: metadata?.type || "text",
         status: "pending",
         confirmations: 0,
-        message: "Report submitted successfully, waiting for blockchain confirmations",
-        data: {
-          reportId,
-          txHash,
-          ipfsHash,
-          ipfsGatewayUrl: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-          ...(audioIpfsHash && { audioIpfsHash }),
-          ...(audioIpfsHash && { audioGatewayUrl: `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}` }),
-          type: metadata?.type || 'text',
-          status: "pending",
-          confirmations: 0,
-          blockNumber: blockchainResult.blockNumber,
-          gasUsed: blockchainResult.gasUsed,
-          timestamp: new Date().toISOString(),
-          dbId: dbRecord?.id,
-        },
+        blockNumber: blockchainResult.blockNumber,
+        gasUsed: blockchainResult.gasUsed,
+        timestamp: new Date().toISOString(),
+        dbId: dbRecord?.id,
+      };
+
+      const successResponse = {
+        success: true,
+        message:
+          "Report submitted successfully, waiting for blockchain confirmations",
+        data: successData,
       };
 
       logger.logResponse("/api/submitReport", 200, "Report submitted");
@@ -241,11 +232,15 @@ class ReportController {
         errorCode: error.code,
       });
 
-      // Return generic error response (don't expose technical details to frontend)
-      let userMessage = "An error occurred while submitting your report. Please try again.";
+      let userMessage =
+        "An error occurred while submitting your report. Please try again.";
       let statusCode = 500;
 
-      if (error.message.includes("validation")) {
+      if (error.code === "DB_SYNC_FAILED") {
+        userMessage =
+          "Report reached blockchain, but backend sync failed. Please contact support with the transaction hash.";
+        statusCode = 503;
+      } else if (error.message.includes("validation")) {
         userMessage = "Invalid report data. Please check and try again.";
         statusCode = 400;
       } else if (error.message.includes("IPFS")) {
@@ -261,6 +256,7 @@ class ReportController {
         reportId,
         message: userMessage,
         code: error.code || "SUBMISSION_ERROR",
+        ...(txHash && { txHash }),
       };
 
       logger.logResponse("/api/submitReport", statusCode, error.message);
@@ -299,8 +295,6 @@ class ReportController {
         });
       }
 
-      // Build response (immediate, no waiting for blockchain)
-      // Note: PostgreSQL returns lowercase column names
       const statusResponse = {
         success: true,
         reportId,
@@ -309,7 +303,7 @@ class ReportController {
         data: {
           reportId: submission.reportid || submission.reportId,
           status: submission.status,
-          type: submission.type || 'text',
+          type: submission.type || "text",
           txHash: submission.txhash || submission.txHash,
           ipfsHash: submission.ipfshash || submission.ipfsHash,
           blockNumber: submission.blocknumber || submission.blockNumber,
@@ -322,11 +316,9 @@ class ReportController {
       };
 
       logger.logResponse("/api/reportStatus", 200);
-      res.status(200).json(statusResponse); // ← User gets response NOW
+      res.status(200).json(statusResponse);
 
-      // ========== SECURITY: Verify in background (don't block user) ==========
-      // This runs after response is sent to user
-      // Queries contract state instead of transaction history (more reliable)
+      // Run consistency checks in the background after responding.
       if (submission.userid || submission.userId) {
         this.verifyAndFixInBackground(reportId, submission).catch((err) => {
           logger.warn("REPORT", "Background verification failed", {
@@ -366,7 +358,7 @@ class ReportController {
         return;
       }
 
-      // Query blockchain contract state (more reliable, persists across resets)
+      // Query blockchain contract state
       const contractStatus =
         await blockchainService.getReportStatusFromContract(userId);
 
@@ -431,9 +423,6 @@ class ReportController {
           correctedFrom: oldStatus,
           correctedTo: "submitted",
         });
-
-        // TODO: Notify user via email/notification that their report was affected
-        // await notificationService.sendTamperingAlert(reportId, oldStatus, 'submitted');
       } else {
         logger.debug("REPORT", "Verification passed - DB matches blockchain", {
           reportId,
@@ -466,7 +455,6 @@ class ReportController {
         reportId,
         error: error.message,
       });
-      // Don't throw - background task failure shouldn't affect user
     }
   }
 
@@ -711,7 +699,6 @@ class ReportController {
       }
 
       // Check if user owns the report (compare userId from JWT to submission userId)
-      // Note: PostgreSQL returns lowercase column names, so it's submission.userid not submission.userId
       const ownsReport = submission.userid === userId;
       let hasAccess = false;
 
@@ -796,5 +783,4 @@ class ReportController {
   }
 }
 
-// Export singleton instance
 module.exports = new ReportController();

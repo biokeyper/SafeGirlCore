@@ -10,6 +10,14 @@ const emailService = require('../services/email');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
 
+function getJwtSecretOrThrow() {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+  return jwtSecret;
+}
+
 class AuthController {
 
   /**
@@ -121,7 +129,7 @@ class AuthController {
       // Generate JWT token
       const token = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email || null },
-        process.env.JWT_SECRET || 'default-secret-key',
+        getJwtSecretOrThrow(),
         { expiresIn: '7d' }
       );
 
@@ -253,7 +261,7 @@ class AuthController {
       // Generate JWT token
       const token = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email },
-        process.env.JWT_SECRET || 'default-secret-key',
+        getJwtSecretOrThrow(),
         { expiresIn: '7d' }
       );
 
@@ -534,7 +542,7 @@ class AuthController {
       // Generate new JWT token with updated phone
       const newToken = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email },
-        process.env.JWT_SECRET || 'default-secret-key',
+        getJwtSecretOrThrow(),
         { expiresIn: '7d' }
       );
 
@@ -666,7 +674,7 @@ class AuthController {
       // Generate new JWT with updated phone
       const newToken = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email },
-        process.env.JWT_SECRET || 'default-secret-key',
+        getJwtSecretOrThrow(),
         { expiresIn: '7d' }
       );
 

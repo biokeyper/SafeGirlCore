@@ -718,6 +718,6 @@ WHERE createdAt < NOW() - INTERVAL '1 year' AND isArchived=FALSE;
 
 ## Additional Resources
 
-- **OpenAPI Spec**: `docs/openapi.yaml`
-- **Architecture**: `docs/ARCHITECTURE.md`
-- **Setup Guide**: `docs/SETUP.md`
+- **OpenAPI Spec**: `openapi.yaml`
+- **Architecture**: `ARCHITECTURE.md`
+- **Setup Guide**: `SETUP.md`

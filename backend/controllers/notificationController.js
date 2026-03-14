@@ -68,7 +68,6 @@ class NotificationController {
         total: result.total
       });
 
-      // DEBUG: Log raw database response
       if (result.notifications.length > 0) {
         logger.info('NOTIFICATION', 'Raw DB notification:', {
           firstNotification: result.notifications[0],

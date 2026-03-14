@@ -3,7 +3,6 @@
  * Handles report sharing: grant/revoke access, view shared reports
  */
 
-const blockchainService = require('../services/blockchain');
 const databaseService = require('../services/database');
 const logger = require('../utils/logger');
 
@@ -23,11 +22,10 @@ class AccessController {
   async grantAccess(req, res, next) {
     try {
       const { reportId, grantToUserId, expiresIn } = req.body;
-      const reporterUserId = req.user?.userId; // From JWT auth middleware
+      const reporterUserId = req.user?.userId; 
 
       logger.logRequest('POST', '/api/access/grant', { reportId, grantToUserId });
 
-      // Validate inputs
       if (!reportId || !grantToUserId) {
         logger.warn('ACCESS', 'Missing required fields', { reportId: !!reportId, grantToUserId: !!grantToUserId });
         return res.status(400).json({
@@ -44,7 +42,6 @@ class AccessController {
         });
       }
 
-      // Check if trying to grant access to self
       if (grantToUserId === reporterUserId) {
         logger.warn('ACCESS', 'Cannot grant access to self', { reportId, userId: reporterUserId });
         return res.status(400).json({
@@ -53,7 +50,6 @@ class AccessController {
         });
       }
 
-      // Check if reporter owns the report
       const submission = await databaseService.getSubmission(reportId, reporterUserId);
       if (!submission) {
         logger.warn('ACCESS', 'Report not found or not owned by user', { reportId, reporterUserId });
@@ -81,15 +77,13 @@ class AccessController {
 
       logger.info('ACCESS', 'Granting access to user', { reportId, grantToUserId });
 
-      // Save to database only
-      // Note: Access control is handled in database, not blockchain
-      // Blockchain records the report; database controls who can view it
+      
       const access = await databaseService.grantAccess({
         reportId,
         reporterId: reporterUserId,
         viewerId: grantToUserId,
         expiresAt,
-        txHash: null  // No blockchain transaction for access control
+        txHash: null  
       });
 
       logger.success('ACCESS', 'Access saved to database', {
@@ -177,8 +171,7 @@ class AccessController {
 
       logger.info('ACCESS', 'Revoking access from database', { reportId, revokeFromUserId });
 
-      // Revoke access in database only
-      // Note: Access control is handled in database, not blockchain
+      
       const access = await databaseService.revokeAccess(reportId, revokeFromUserId);
 
       logger.success('ACCESS', 'Access revoked in database', {
@@ -414,7 +407,7 @@ class AccessController {
   }
 
   /**
-   * View a report if user has access (decrypt if backend encryption is used)
+   * View a report if user has access 
    * GET /api/access/report/:reportId
    */
   async viewReport(req, res, next) {
@@ -471,7 +464,6 @@ class AccessController {
         viewerId: viewerUserId
       });
 
-      // Note: If backend encryption is implemented, decrypt responses/metadata here
       res.status(200).json({
         success: true,
         message: 'Report retrieved',

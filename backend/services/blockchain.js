@@ -194,11 +194,6 @@ class BlockchainService {
   }
 
   /**
-   * Get transaction receipt and details
-   * @param {string} txHash - Transaction hash
-   * @returns {Promise<object>} Transaction status
-   */
-  /**
    * Get report status by querying contract state (not transaction history)
    * This is more reliable than getTransactionStatus as it persists across blockchain resets
    * @param {string|number} userId - App user ID used to derive report key
@@ -240,7 +235,7 @@ class BlockchainService {
       });
 
       return {
-        status: "confirmed", // ✅ If it exists in contract, it's confirmed
+        status: "confirmed",
         exists: true,
         timestamp: timestampStr,
         ipfsHash,

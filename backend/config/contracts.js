@@ -1,18 +1,18 @@
 /**
- * Smart Contract Configuration
- * Contains ABI, address, and ethers.js setup
+ * Contract manager for SafeGirl.
+ *
+ * This file is the bridge between the backend and the deployed smart contract.
+ * It creates and stores three shared objects:
+ * - provider: RPC connection used to read blockchain state
+ * - signer: backend wallet used to sign transactions
+ * - contract: ethers.js contract instance used to call functions/events
  */
-// the bridge between  my node backend and the smart contract on the blockchain. it sets up the connection to the blockchain and tells ethers.js how to talk to my safegirl contracr
-//its like the provider;connection to read blaockchain data
-//signer;my backend's wallet that pays for transactions
-//contract ; the interface to call smart contract fucntions
 const { ethers } = require("ethers");
 const logger = require("../utils/logger");
 
-// Contract ABI (Application Binary Interface)
-// This is the list of functions the smart contract has
+// Contract ABI: tells ethers the callable functions/events and their types.
 const SAFEGIRL_ABI = [
-  // submitReportFor(bytes32 userKey, string ipfsHash, string[] responses)
+  // Backend-owned submit path for app users represented by bytes32 user keys.
   {
     inputs: [
       { name: "_userKey", type: "bytes32" },
@@ -24,7 +24,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // submitReport(string ipfsHash, string[] responses)
+  // Direct wallet submit path (not usually used in company-wallet flow).
   {
     inputs: [
       { name: "_ipfsHash", type: "string" },
@@ -35,7 +35,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // updateReportFor(bytes32 userKey, string newIpfsHash, string[] newResponses)
+  // Backend-owned update path for bytes32 user keys.
   {
     inputs: [
       { name: "_userKey", type: "bytes32" },
@@ -47,7 +47,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // updateReport(string newIpfsHash, string[] newResponses)
+  // Direct wallet update path.
   {
     inputs: [
       { name: "_newIpfsHash", type: "string" },
@@ -58,7 +58,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // grantAccess(address viewer, uint256 customExpiry)
+  // Consent grant function.
   {
     inputs: [
       { name: "_viewer", type: "address" },
@@ -69,7 +69,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // revokeAccess(address viewer)
+  // Consent revoke function.
   {
     inputs: [{ name: "_viewer", type: "address" }],
     name: "revokeAccess",
@@ -77,7 +77,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // getReportStatusFor(bytes32 userKey)
+  // Read delegated report metadata by user key.
   {
     inputs: [{ name: "_userKey", type: "bytes32" }],
     name: "getReportStatusFor",
@@ -90,7 +90,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "view",
     type: "function",
   },
-  // getReportStatus(address user)
+  // Read direct-wallet report metadata by address.
   {
     inputs: [{ name: "_user", type: "address" }],
     name: "getReportStatus",
@@ -103,7 +103,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "view",
     type: "function",
   },
-  // getActiveConsents(address reporter)
+  // List active consent records for a reporter.
   {
     inputs: [{ name: "_reporter", type: "address" }],
     name: "getActiveConsents",
@@ -121,7 +121,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "view",
     type: "function",
   },
-  // sendPanicAlert(string locationData)
+  // Emit panic alert event.
   {
     inputs: [{ name: "_locationData", type: "string" }],
     name: "sendPanicAlert",
@@ -129,7 +129,7 @@ const SAFEGIRL_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
-  // Events
+  // Emitted when a delegated report is created.
   {
     anonymous: false,
     inputs: [
@@ -142,6 +142,7 @@ const SAFEGIRL_ABI = [
     name: "ReportSubmittedFor",
     type: "event",
   },
+  // Emitted when a delegated report is updated.
   {
     anonymous: false,
     inputs: [
@@ -154,6 +155,7 @@ const SAFEGIRL_ABI = [
     name: "ReportUpdatedFor",
     type: "event",
   },
+  // Emitted when a direct report is created.
   {
     anonymous: false,
     inputs: [
@@ -165,6 +167,7 @@ const SAFEGIRL_ABI = [
     name: "ReportSubmitted",
     type: "event",
   },
+  // Emitted when a direct report is updated.
   {
     anonymous: false,
     inputs: [
@@ -176,6 +179,7 @@ const SAFEGIRL_ABI = [
     name: "ReportUpdated",
     type: "event",
   },
+  // Emitted when consent is granted.
   {
     anonymous: false,
     inputs: [
@@ -186,6 +190,7 @@ const SAFEGIRL_ABI = [
     name: "ConsentGranted",
     type: "event",
   },
+  // Emitted when consent is revoked.
   {
     anonymous: false,
     inputs: [
@@ -195,6 +200,7 @@ const SAFEGIRL_ABI = [
     name: "ConsentRevoked",
     type: "event",
   },
+  // Emitted when panic alert is triggered.
   {
     anonymous: false,
     inputs: [
@@ -208,13 +214,15 @@ const SAFEGIRL_ABI = [
 ];
 
 class ContractManager {
-  //class that manages the block chain connection
+  // Centralized owner of provider/signer/contract singletons.
   constructor() {
     this.provider = null;
     this.signer = null;
     this.contract = null;
+
+    // Required runtime values from environment.
     this.contractAddress = process.env.DEPLOYED_CONTRACT_ADDRESS;
-    // Use Polygon Amoy (Mumbai is deprecated)
+    // Default to Polygon Amoy if RPC URL is not explicitly provided.
     this.rpcUrl =
       process.env.POLYGON_AMOY_RPC_URL ||
       "https://rpc-amoy.polygon.technology/";
@@ -222,28 +230,28 @@ class ContractManager {
   }
 
   /**
-   * Initialize provider and signer
-   * Must be called before using contract methods
+   * Builds provider, signer, and contract once during server startup.
+   * Must be called before getContract/getProvider/getSigner.
    */
   async initialize() {
     try {
-      // Create provider (connection to blockchain)
+      // 1) Connect to the RPC endpoint.
       this.provider = new ethers.JsonRpcProvider(this.rpcUrl);
 
-      // Verify RPC connection
+      // 2) Verify network connectivity early so startup fails fast.
       const network = await this.provider.getNetwork();
       logger.success("CONFIG", "Connected to blockchain", {
         network: network.name,
-        chainId: Number(network.chainId), // Convert BigInt to number for logging
+        chainId: Number(network.chainId), // Cast BigInt so log serialization stays simple.
       });
 
-      // Create signer (backend's wallet for paying gas)
+      // 3) Build backend signer (wallet used to send transactions).
       this.signer = new ethers.Wallet(this.privateKey, this.provider);
       logger.info("CONFIG", "Signer initialized", {
         address: this.signer.address,
       });
 
-      // Create contract instance
+      // 4) Build typed contract instance bound to signer.
       this.contract = new ethers.Contract(
         this.contractAddress,
         SAFEGIRL_ABI,
@@ -264,7 +272,7 @@ class ContractManager {
   }
 
   /**
-   * Get contract instance
+   * Returns initialized contract instance.
    */
   getContract() {
     if (!this.contract) {
@@ -274,7 +282,7 @@ class ContractManager {
   }
 
   /**
-   * Get signer (backend wallet)
+   * Returns initialized backend signer.
    */
   getSigner() {
     if (!this.signer) {
@@ -284,7 +292,7 @@ class ContractManager {
   }
 
   /**
-   * Get provider (blockchain connection)
+   * Returns initialized provider.
    */
   getProvider() {
     if (!this.provider) {
@@ -294,5 +302,5 @@ class ContractManager {
   }
 }
 
-// Export singleton instance
+// Export one shared instance used across the backend.
 module.exports = new ContractManager();

@@ -132,8 +132,8 @@ class OTPService {
 
       logger.info('OTP', `Creating ${otpType} OTP for ${phone}`);
 
-      // Log the generated OTP code prominently for development/testing
-      logger.success('OTP', `🔐 Generated OTP Code: ${otpCode}`, {
+      // Expose OTP in logs only for development and testing workflows.
+      logger.success('OTP', `Generated OTP Code: ${otpCode}`, {
         phone,
         otpType,
         expiresInMinutes: this.OTP_EXPIRY_MINUTES,
@@ -168,7 +168,7 @@ class OTPService {
         expiresAt,
         expiresIn: this.OTP_EXPIRY_MINUTES * 60, // in seconds
         smsSent,
-        // For testing only (remove in production)
+        // Returned only in development mode.
         _testOTP: process.env.NODE_ENV === 'development' ? otpCode : undefined
       };
     } catch (error) {

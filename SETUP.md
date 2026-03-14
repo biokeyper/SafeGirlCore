@@ -681,8 +681,8 @@ npm run format
 
 ## Additional Resources
 
-- **OpenAPI Spec**: `docs/openapi.yaml` (import to Swagger UI)
-- **Architecture**: `docs/ARCHITECTURE.md`
-- **Database Schema**: `docs/DATABASE.md`
+- **OpenAPI Spec**: `openapi.yaml` (import to Swagger UI)
+- **Architecture**: `ARCHITECTURE.md`
+- **Database Schema**: `DATABASE.md`
 - **API Examples**: See integration tests in `tests/`
 - **Smart Contract**: `contracts/SafeGirl.sol`

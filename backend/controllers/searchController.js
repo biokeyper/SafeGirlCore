@@ -10,7 +10,7 @@ class SearchController {
 
   /**
    * Search and filter reports
-   * GET /api/reports/search
+    * GET /api/search/reports
    *
    * Query params:
    * - status: pending, submitted, failed, archived
@@ -24,7 +24,7 @@ class SearchController {
       const userId = req.user?.userId;
       const { status, createdAfter, createdBefore, limit = 10, offset = 0 } = req.query;
 
-      logger.logRequest('GET', '/api/reports/search', {
+      logger.logRequest('GET', '/api/search/reports', {
         userId,
         status,
         createdAfter,
@@ -140,14 +140,14 @@ class SearchController {
 
   /**
    * Get report statistics for user
-   * GET /api/reports/stats
+    * GET /api/search/stats
    * Protected: User must be authenticated
    */
   async getReportStats(req, res, next) {
     try {
       const userId = req.user?.userId;
 
-      logger.logRequest('GET', '/api/reports/stats', { userId });
+      logger.logRequest('GET', '/api/search/stats', { userId });
 
       if (!userId) {
         logger.warn('SEARCH', 'User not authenticated', {});
