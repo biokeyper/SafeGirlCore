@@ -196,7 +196,7 @@ class DatabaseService {
         reportId,
         txHash,
         ipfsHash,
-        responses ? JSON.stringify(responses) : null,
+        responses || null,
         blockNumber,
         gasUsed,
         status,
@@ -1283,7 +1283,7 @@ class DatabaseService {
       const { userId, status, createdAfter, createdBefore, limit = 10, offset = 0 } = filters;
 
       let query = `
-        SELECT reportid, status, createdat, confirmedat, txhash, ipfshash
+        SELECT reportid, status, createdat, submittedat, txhash, ipfshash, blocknumber, gasused, confirmations, type, metadata
         FROM submissions
         WHERE userid = $1
       `;
@@ -1317,11 +1317,16 @@ class DatabaseService {
       return {
         reports: result.rows.map(r => ({
           reportId: r.reportid,
-          status: r.status,
-          createdAt: r.createdat,
-          confirmedAt: r.confirmedat,
           txHash: r.txhash,
-          ipfsHash: r.ipfshash
+          ipfsHash: r.ipfshash,
+          type: r.type,
+          status: r.status,
+          confirmations: r.confirmations || 0,
+          blockNumber: r.blocknumber,
+          gasUsed: r.gasused,
+          createdAt: r.createdat,
+          submittedAt: r.submittedat,
+          metadata: r.metadata
         })) || [],
         total
       };

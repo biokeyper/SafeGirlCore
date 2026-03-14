@@ -113,11 +113,12 @@ class ReportController {
           audioIpfsHash,
         });
 
-        // Store audio hash in metadata for later retrieval
+        // Store audio hash and gateway URL in metadata for later retrieval
         if (!metadata) {
           metadata = {};
         }
         metadata.audioIpfsHash = audioIpfsHash;
+        metadata.audioGatewayUrl = `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}`;
       }
 
       // ========== STEP 3: Call Smart Contract ==========
@@ -205,7 +206,9 @@ class ReportController {
         reportId,
         txHash,
         ipfsHash,
+        ipfsGatewayUrl: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
         ...(audioIpfsHash && { audioIpfsHash }),
+        ...(audioIpfsHash && { audioGatewayUrl: `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}` }),
         type: metadata?.type || 'text',
         status: "pending",
         confirmations: 0,
@@ -214,7 +217,9 @@ class ReportController {
           reportId,
           txHash,
           ipfsHash,
+          ipfsGatewayUrl: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
           ...(audioIpfsHash && { audioIpfsHash }),
+          ...(audioIpfsHash && { audioGatewayUrl: `https://gateway.pinata.cloud/ipfs/${audioIpfsHash}` }),
           type: metadata?.type || 'text',
           status: "pending",
           confirmations: 0,
@@ -236,23 +241,27 @@ class ReportController {
         errorCode: error.code,
       });
 
-      // Return error response
+      // Return generic error response (don't expose technical details to frontend)
+      let userMessage = "An error occurred while submitting your report. Please try again.";
+      let statusCode = 500;
+
+      if (error.message.includes("validation")) {
+        userMessage = "Invalid report data. Please check and try again.";
+        statusCode = 400;
+      } else if (error.message.includes("IPFS")) {
+        userMessage = "Network error. Please try again.";
+        statusCode = 503;
+      } else if (error.message.includes("Timeout")) {
+        userMessage = "Request timed out. Please try again.";
+        statusCode = 504;
+      }
+
       const errorResponse = {
         error: true,
         reportId,
-        message: error.message,
+        message: userMessage,
         code: error.code || "SUBMISSION_ERROR",
       };
-
-      // Determine status code based on error type
-      let statusCode = 500;
-      if (error.message.includes("validation")) {
-        statusCode = 400;
-      } else if (error.message.includes("IPFS")) {
-        statusCode = 503;
-      } else if (error.message.includes("Timeout")) {
-        statusCode = 504;
-      }
 
       logger.logResponse("/api/submitReport", statusCode, error.message);
       res.status(statusCode).json(errorResponse);

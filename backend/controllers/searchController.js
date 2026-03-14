@@ -104,11 +104,17 @@ class SearchController {
         data: {
           reports: result.reports.map(r => ({
             reportId: r.reportId,
+            txHash: r.txHash,
+            ipfsHash: r.ipfsHash,
+            ipfsGatewayUrl: r.ipfsHash ? `https://gateway.pinata.cloud/ipfs/${r.ipfsHash}` : null,
+            type: r.type,
             status: r.status,
+            confirmations: r.confirmations || 0,
+            blockNumber: r.blockNumber,
+            gasUsed: r.gasUsed,
             createdAt: r.createdAt,
             submittedAt: r.submittedAt,
-            txHash: r.txHash,
-            ipfsHash: r.ipfsHash
+            metadata: r.metadata
           })),
           pagination: {
             total: result.total,
