@@ -34,6 +34,7 @@ contract SafeGirl is Ownable {
     // ========== STATE VARIABLES ==========
     string[] public questions;
     mapping(address => Report) private reports;
+    mapping(bytes32 => Report) private delegatedReports;
     mapping(address => mapping(address => Consent)) private activeConsents;
     mapping(address => Consent[]) private consentLogs;
     mapping(address => EmergencyContact) private userEmergencyContacts;
@@ -45,6 +46,8 @@ contract SafeGirl is Ownable {
     // ========== EVENTS ==========
     event ReportSubmitted(address indexed reporter, uint256 timestamp, string ipfsHash, uint256 version);
     event ReportUpdated(address indexed reporter, uint256 timestamp, string newIpfsHash, uint256 version);
+    event ReportSubmittedFor(bytes32 indexed userKey, address indexed submitter, uint256 timestamp, string ipfsHash, uint256 version);
+    event ReportUpdatedFor(bytes32 indexed userKey, address indexed submitter, uint256 timestamp, string newIpfsHash, uint256 version);
     event ConsentGranted(address indexed reporter, address indexed viewer, uint256 expiresAt);
     event ConsentRevoked(address indexed reporter, address indexed viewer);
     event PanicAlert(address indexed sender, uint256 timestamp, string locationData);
@@ -70,16 +73,7 @@ contract SafeGirl is Ownable {
     /// @param _ipfsHash The IPFS hash of the encrypted report
     /// @param _responses Array of responses to predefined questions
     function submitReport(string calldata _ipfsHash, string[] calldata _responses) external {
-        // Validate IPFS hash
-        require(bytes(_ipfsHash).length > 0, "IPFS hash cannot be empty");
-        require(bytes(_ipfsHash).length <= MAX_IPFS_HASH_LENGTH, "IPFS hash exceeds max length");
-
-        // Validate responses count and length
-        require(_responses.length == questions.length, "All questions must be answered");
-
-        for (uint256 i = 0; i < _responses.length; i++) {
-            require(bytes(_responses[i]).length <= MAX_RESPONSE_LENGTH, "Response exceeds max length");
-        }
+        _validateReportInput(_ipfsHash, _responses);
 
         Report storage report = reports[msg.sender];
         report.ipfsHash = _ipfsHash;
@@ -98,18 +92,36 @@ contract SafeGirl is Ownable {
         emit ReportSubmitted(msg.sender, block.timestamp, _ipfsHash, report.version);
     }
 
+    /// @notice Submit a report on behalf of an application user (company-wallet flow)
+    /// @param _userKey Stable pseudonymous user key (e.g., keccak256(userId))
+    /// @param _ipfsHash The IPFS hash of the encrypted report
+    /// @param _responses Array of responses to predefined questions
+    function submitReportFor(bytes32 _userKey, string calldata _ipfsHash, string[] calldata _responses) external onlyOwner {
+        require(_userKey != bytes32(0), "Invalid user key");
+        _validateReportInput(_ipfsHash, _responses);
+
+        Report storage report = delegatedReports[_userKey];
+        report.ipfsHash = _ipfsHash;
+        report.timestamp = block.timestamp;
+        report.exists = true;
+
+        delete report.responses;
+        for (uint256 i = 0; i < _responses.length; i++) {
+            report.responses.push(_responses[i]);
+        }
+
+        report.version++;
+
+        reportCount++;
+        emit ReportSubmittedFor(_userKey, msg.sender, block.timestamp, _ipfsHash, report.version);
+    }
+
     /// @notice Update an existing report with new data
     /// @param _newIpfsHash The new IPFS hash
     /// @param _newResponses Updated responses to questions
     function updateReport(string calldata _newIpfsHash, string[] calldata _newResponses) external {
         require(reports[msg.sender].exists, "No report exists to update");
-        require(bytes(_newIpfsHash).length > 0, "IPFS hash cannot be empty");
-        require(bytes(_newIpfsHash).length <= MAX_IPFS_HASH_LENGTH, "IPFS hash exceeds max length");
-        require(_newResponses.length == questions.length, "All questions must be answered");
-
-        for (uint256 i = 0; i < _newResponses.length; i++) {
-            require(bytes(_newResponses[i]).length <= MAX_RESPONSE_LENGTH, "Response exceeds max length");
-        }
+        _validateReportInput(_newIpfsHash, _newResponses);
 
         Report storage report = reports[msg.sender];
         report.ipfsHash = _newIpfsHash;
@@ -124,6 +136,29 @@ contract SafeGirl is Ownable {
         report.version++;
 
         emit ReportUpdated(msg.sender, block.timestamp, _newIpfsHash, report.version);
+    }
+
+    /// @notice Update a delegated report by user key (company-wallet flow)
+    /// @param _userKey Stable pseudonymous user key (e.g., keccak256(userId))
+    /// @param _newIpfsHash The updated IPFS hash
+    /// @param _newResponses Updated responses to questions
+    function updateReportFor(bytes32 _userKey, string calldata _newIpfsHash, string[] calldata _newResponses) external onlyOwner {
+        require(_userKey != bytes32(0), "Invalid user key");
+        require(delegatedReports[_userKey].exists, "No report exists to update");
+        _validateReportInput(_newIpfsHash, _newResponses);
+
+        Report storage report = delegatedReports[_userKey];
+        report.ipfsHash = _newIpfsHash;
+        report.timestamp = block.timestamp;
+
+        delete report.responses;
+        for (uint256 i = 0; i < _newResponses.length; i++) {
+            report.responses.push(_newResponses[i]);
+        }
+
+        report.version++;
+
+        emit ReportUpdatedFor(_userKey, msg.sender, block.timestamp, _newIpfsHash, report.version);
     }
 
     // ========== CONSENT MANAGEMENT ==========
@@ -237,6 +272,56 @@ contract SafeGirl is Ownable {
         return reports[_user].version;
     }
 
+    /// @notice Get report version by delegated user key
+    /// @param _userKey Stable pseudonymous user key (e.g., keccak256(userId))
+    /// @return Version number of the report
+    function getReportVersionFor(bytes32 _userKey) external view returns (uint256) {
+        require(delegatedReports[_userKey].exists, "No report exists");
+        return delegatedReports[_userKey].version;
+    }
+
+    /// @notice Get report status and metadata
+    /// @param _user Address of report owner
+    /// @return exists Whether report exists
+    /// @return timestamp When report was submitted
+    /// @return ipfsHash The IPFS hash of the encrypted report
+    /// @return version Current version number
+    function getReportStatus(address _user) external view returns (
+        bool exists,
+        uint256 timestamp,
+        string memory ipfsHash,
+        uint256 version
+    ) {
+        Report storage report = reports[_user];
+        return (
+            report.exists,
+            report.timestamp,
+            report.ipfsHash,
+            report.version
+        );
+    }
+
+    /// @notice Get delegated report status and metadata
+    /// @param _userKey Stable pseudonymous user key (e.g., keccak256(userId))
+    /// @return exists Whether report exists
+    /// @return timestamp When report was submitted
+    /// @return ipfsHash The IPFS hash of the encrypted report
+    /// @return version Current version number
+    function getReportStatusFor(bytes32 _userKey) external view returns (
+        bool exists,
+        uint256 timestamp,
+        string memory ipfsHash,
+        uint256 version
+    ) {
+        Report storage report = delegatedReports[_userKey];
+        return (
+            report.exists,
+            report.timestamp,
+            report.ipfsHash,
+            report.version
+        );
+    }
+
     /// @notice Get all active and non-expired consents for a user
     /// @param _user Address to query consents for
     /// @return Array of active Consent structs
@@ -296,5 +381,16 @@ contract SafeGirl is Ownable {
         }
 
         return count;
+    }
+
+    /// @notice Shared input validation for report submit/update flows
+    function _validateReportInput(string calldata _ipfsHash, string[] calldata _responses) internal view {
+        require(bytes(_ipfsHash).length > 0, "IPFS hash cannot be empty");
+        require(bytes(_ipfsHash).length <= MAX_IPFS_HASH_LENGTH, "IPFS hash exceeds max length");
+        require(_responses.length == questions.length, "All questions must be answered");
+
+        for (uint256 i = 0; i < _responses.length; i++) {
+            require(bytes(_responses[i]).length <= MAX_RESPONSE_LENGTH, "Response exceeds max length");
+        }
     }
 }

@@ -231,26 +231,39 @@ class DatabaseService {
         throw new Error('Database not initialized');
       }
 
+      console.log('\n🔍 DATABASE.getSubmission() called');
+      console.log('   reportId:', reportId);
+      console.log('   userId:', userId);
+
       logger.debug('DATABASE', 'Fetching submission', { reportId, userId });
 
       const query = 'SELECT * FROM submissions WHERE reportid = $1;';
       const result = await this.pool.query(query, [reportId]);
 
       if (result.rows.length === 0) {
+        console.log('❌ Report not found in database');
         logger.warn('DATABASE', 'Submission not found', { reportId });
         return null;
       }
 
       let submission = result.rows[0];
+      console.log('✅ Report found in database');
+      console.log('   Report owner (userid):', submission.userid);
 
       // ========== VALIDATE OWNERSHIP ==========
       // If userId is provided, ensure user owns the report or has access to it
       if (userId) {
         const userOwnedReport = submission.userid === userId;
+        console.log('   User-specific access check:');
+        console.log('      userId:', userId);
+        console.log('      submission.userid:', submission.userid);
+        console.log('      User owns report?', userOwnedReport);
+
         let userHasSharedAccess = false;
 
         // Check if user has been granted access to this report
         if (!userOwnedReport) {
+          console.log('      User does not own report, checking shared access...');
           const accessQuery = `
             SELECT id FROM report_access
             WHERE reportid = $1 AND viewerid = $2 AND isactive = TRUE
@@ -258,12 +271,16 @@ class DatabaseService {
           `;
           const accessResult = await this.pool.query(accessQuery, [reportId, userId]);
           userHasSharedAccess = accessResult.rows.length > 0;
+          console.log('      User has shared access?', userHasSharedAccess);
         }
 
         if (!userOwnedReport && !userHasSharedAccess) {
+          console.log('❌ User does NOT have access to this report - BLOCKED');
           logger.warn('DATABASE', 'User does not have access to report', { reportId, userId });
           return null;
         }
+
+        console.log('✅ User has valid access to report');
       }
 
       // ========== FETCH FROM IPFS IF RESPONSES ARE NULL ==========

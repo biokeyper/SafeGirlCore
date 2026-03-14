@@ -18,9 +18,21 @@ class ReportController {
 
     try {
       const { payload, responses, metadata } = req.body;
+      const userId = req.user?.userId;
+
+      console.log('\n========== REPORT SUBMISSION START ==========');
+      console.log('📝 userId from JWT:', userId);
+
+      if (!userId) {
+        return res.status(401).json({
+          error: true,
+          message: 'Authentication required'
+        });
+      }
 
       // Generate unique report ID
       reportId = `report_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log('🆔 Generated reportId:', reportId);
 
       logger.logRequest('POST', '/api/submitReport', {
         reportId,
@@ -67,15 +79,25 @@ class ReportController {
       });
 
       // ========== STEP 3: Call Smart Contract ==========
+      console.log('\n⛓️  STEP 3: Submitting to blockchain');
+      console.log('   ipfsHash:', ipfsHash);
+      console.log('   userId:', userId);
+      console.log('   responses.length:', responses ? responses.length : 0);
+
       logger.info('REPORT', 'Submitting to blockchain', {
         reportId,
         ipfsHash,
         responseCount: responses ? responses.length : 0
       });
 
-      const blockchainResult = await blockchainService.submitReport(ipfsHash, responses || []);
+      const blockchainResult = await blockchainService.submitReport(ipfsHash, responses || [], userId);
 
       txHash = blockchainResult.txHash;
+
+      console.log('✅ Blockchain submission success:');
+      console.log('   txHash:', txHash);
+      console.log('   blockNumber:', blockchainResult.blockNumber);
+      console.log('   gasUsed:', blockchainResult.gasUsed);
 
       logger.success('REPORT', 'Blockchain submission successful', {
         reportId,
@@ -86,13 +108,15 @@ class ReportController {
       // ========== STEP 4: Save to Database ==========
       // Critical: Database must sync with blockchain
       // If DB is down, we fail the entire submission to avoid orphaned records
+      console.log('\n💾 STEP 4: Saving to database');
+      console.log('   userId:', userId);
+      console.log('   txHash:', txHash);
+      console.log('   status: confirmed');
+
       logger.info('REPORT', 'Saving to database', { reportId, txHash });
 
       let dbRecord;
       try {
-        // Get userId from authenticated request (JWT token)
-        const userId = req.user.userId;
-
         dbRecord = await databaseService.saveSubmission({
           reportId,
           txHash,
@@ -110,6 +134,10 @@ class ReportController {
           encryptionDataIv: encryptionResult.iv,
           encryptionDataAuthTag: encryptionResult.authTag
         });
+
+        console.log('✅ Database save success:');
+        console.log('   dbId:', dbRecord.id);
+        console.log('   userId stored:', dbRecord.userid || dbRecord.userId);
 
         logger.success('REPORT', 'Saved to database', {
           reportId,
@@ -145,6 +173,12 @@ class ReportController {
       }
 
       // ========== STEP 5: Return Success Response ==========
+      console.log('\n✅ STEP 5: Submission complete');
+      console.log('   userId:', userId);
+      console.log('   reportId:', reportId);
+      console.log('   txHash:', txHash);
+      console.log('========== REPORT SUBMISSION END ==========\n');
+
       const successResponse = {
         success: true,
         reportId,
@@ -168,6 +202,11 @@ class ReportController {
 
     } catch (error) {
       // Log detailed error context
+      console.error('\n❌ REPORT SUBMISSION ERROR:');
+      console.error('   reportId:', reportId);
+      console.error('   error:', error.message);
+      console.error('   code:', error.code);
+
       logger.error('REPORT', 'Submission failed', {
         reportId,
         ipfsHash,
@@ -207,9 +246,14 @@ class ReportController {
       const { reportId } = req.query;
       const userId = req.user?.userId;
 
+      console.log('\n========== GET REPORT STATUS START ==========');
+      console.log('📋 reportId:', reportId);
+      console.log('👤 userId from JWT:', userId);
+
       logger.logRequest('GET', `/api/reportStatus?reportId=${reportId}`);
 
       if (!userId) {
+        console.error('❌ No userId in JWT');
         logger.warn('REPORT', 'User not authenticated', {});
         return res.status(401).json({
           error: true,
@@ -219,9 +263,11 @@ class ReportController {
 
       // Query database for submission (fast)
       // Pass userId to decrypt responses and metadata
+      console.log('🔍 Querying database with userId filter...');
       const submission = await databaseService.getSubmission(reportId, userId);
 
       if (!submission) {
+        console.log('❌ Report not found in database (or user does not have access)');
         logger.warn('REPORT', 'Report not found', { reportId });
         return res.status(404).json({
           error: true,
@@ -230,8 +276,15 @@ class ReportController {
         });
       }
 
+      console.log('✅ Report found:');
+      console.log('   reportId:', submission.reportid || submission.reportId);
+      console.log('   status:', submission.status);
+      console.log('   userId stored in DB:', submission.userid || submission.userId);
+
       // Build response (immediate, no waiting for blockchain)
       // Note: PostgreSQL returns lowercase column names
+      console.log('📤 Building response with status:', submission.status);
+
       const statusResponse = {
         success: true,
         reportId,
@@ -251,12 +304,15 @@ class ReportController {
         }
       };
 
+      console.log('✅ GET REPORT STATUS END (returning to user)\n');
       logger.logResponse('/api/reportStatus', 200);
       res.status(200).json(statusResponse);  // ← User gets response NOW
 
       // ========== SECURITY: Verify in background (don't block user) ==========
       // This runs after response is sent to user
-      if (submission.txHash) {
+      // Queries contract state instead of transaction history (more reliable)
+      console.log('🔄 Starting background verification (non-blocking)...');
+      if (submission.userid || submission.userId) {
         this.verifyAndFixInBackground(reportId, submission).catch(err => {
           logger.warn('REPORT', 'Background verification failed', {
             reportId,
@@ -284,24 +340,47 @@ class ReportController {
    */
   async verifyAndFixInBackground(reportId, submission) {
     try {
+      console.log('\n🔄 BACKGROUND VERIFICATION STARTED');
+      console.log('   reportId:', reportId);
+      console.log('   currentStatus:', submission.status);
+
       logger.debug('REPORT', 'Starting background verification', { reportId });
 
-      // Query blockchain (slow, but user doesn't see it)
-      const txStatus = await blockchainService.getTransactionStatus(submission.txHash);
+      const userId = submission.userid || submission.userId;
+      if (!userId) {
+        console.log('❌ Missing userId, skipping verification');
+        logger.warn('REPORT', 'Skipping background verification: missing userId', { reportId });
+        return;
+      }
 
-      // Check for data tampering
-      if (txStatus.status !== submission.status) {
+      console.log('   userId:', userId);
+      console.log('   📡 Querying blockchain contract state...');
+
+      // Query blockchain contract state (more reliable, persists across resets)
+      const contractStatus = await blockchainService.getReportStatusFromContract(userId);
+
+      // Contract state is the source of truth
+      const blockchainStatus = contractStatus.exists ? 'confirmed' : 'not_found';
+      console.log('   Blockchain status:', blockchainStatus);
+
+      // Check for data tampering (DB status should match blockchain)
+      if (blockchainStatus === 'confirmed' && submission.status !== 'confirmed') {
+        console.log('\n⚠️  TAMPERING DETECTED!');
+        console.log('   DB status:', submission.status);
+        console.log('   Blockchain status: confirmed');
+        console.log('   🔧 Fixing database...');
+
         logger.error('SECURITY', 'TAMPERING DETECTED - DB does not match blockchain', {
           reportId,
           dbStatus: submission.status,
-          blockchainStatus: txStatus.status
+          blockchainStatus: 'confirmed'
         });
 
         // Log the tampering alert
         await databaseService.logTamperingAlert(
           reportId,
           submission.status,
-          txStatus.status
+          'confirmed'
         );
 
         // Log audit entry for the discrepancy
@@ -309,23 +388,25 @@ class ReportController {
           reportId,
           'status',
           submission.status,
-          txStatus.status,
+          'confirmed',
           'tampering_detected',
           'background_verification'
         );
 
         // Fix the database using blockchain (source of truth)
         const oldStatus = submission.status;
-        await databaseService.updateStatus(reportId, txStatus.status, {
-          blockNumber: txStatus.blockNumber
+        await databaseService.updateStatus(reportId, 'confirmed', {
+          timestamp: contractStatus.timestamp
         });
+
+        console.log('   ✅ Database updated from', oldStatus, 'to confirmed');
 
         // Log the correction
         await databaseService.logAudit(
           reportId,
           'status',
           oldStatus,
-          txStatus.status,
+          'confirmed',
           'tampering_detected',
           'background_job'
         );
@@ -336,20 +417,28 @@ class ReportController {
         logger.success('SECURITY', 'Tampering corrected', {
           reportId,
           correctedFrom: oldStatus,
-          correctedTo: txStatus.status
+          correctedTo: 'confirmed'
         });
 
         // TODO: Notify user via email/notification that their report was affected
-        // await notificationService.sendTamperingAlert(reportId, oldStatus, txStatus.status);
+        // await notificationService.sendTamperingAlert(reportId, oldStatus, 'confirmed');
       } else {
+        console.log('✅ Verification passed - DB matches blockchain');
         logger.debug('REPORT', 'Verification passed - DB matches blockchain', { reportId });
       }
 
-      // Update confirmation count if changed
-      if (submission.status === 'pending' && txStatus.status === 'confirmed') {
+      // Update DB if report is confirmed in contract but DB still shows pending
+      if (submission.status === 'pending' && blockchainStatus === 'confirmed') {
+        console.log('\n📝 STATUS UPDATE: pending → confirmed');
+        console.log('   reportId:', reportId);
+        console.log('   Blockchain timestamp:', contractStatus.timestamp);
+        console.log('   Blockchain ipfsHash:', contractStatus.ipfsHash);
+
         await databaseService.updateStatus(reportId, 'confirmed', {
-          blockNumber: txStatus.blockNumber
+          timestamp: contractStatus.timestamp
         });
+
+        console.log('   ✅ Database status updated');
 
         await databaseService.logAudit(
           reportId,
@@ -362,11 +451,18 @@ class ReportController {
 
         logger.success('REPORT', 'Report confirmed on blockchain', {
           reportId,
-          blockNumber: txStatus.blockNumber
+          timestamp: contractStatus.timestamp,
+          ipfsHash: contractStatus.ipfsHash
         });
       }
 
+      console.log('\n🔄 BACKGROUND VERIFICATION COMPLETED\n');
+
     } catch (error) {
+      console.error('\n❌ BACKGROUND VERIFICATION ERROR');
+      console.error('   reportId:', reportId);
+      console.error('   error:', error.message);
+
       logger.error('REPORT', 'Background verification error', {
         reportId,
         error: error.message

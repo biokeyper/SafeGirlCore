@@ -12,6 +12,18 @@ const logger = require('../utils/logger');
 // Contract ABI (Application Binary Interface)
 // This is the list of functions the smart contract has
 const SAFEGIRL_ABI = [
+  // submitReportFor(bytes32 userKey, string ipfsHash, string[] responses)
+  {
+    inputs: [
+      { name: '_userKey', type: 'bytes32' },
+      { name: '_ipfsHash', type: 'string' },
+      { name: '_responses', type: 'string[]' }
+    ],
+    name: 'submitReportFor',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
   // submitReport(string ipfsHash, string[] responses)
   {
     inputs: [
@@ -19,6 +31,18 @@ const SAFEGIRL_ABI = [
       { name: '_responses', type: 'string[]' }
     ],
     name: 'submitReport',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+  // updateReportFor(bytes32 userKey, string newIpfsHash, string[] newResponses)
+  {
+    inputs: [
+      { name: '_userKey', type: 'bytes32' },
+      { name: '_newIpfsHash', type: 'string' },
+      { name: '_newResponses', type: 'string[]' }
+    ],
+    name: 'updateReportFor',
     outputs: [],
     stateMutability: 'nonpayable',
     type: 'function'
@@ -53,6 +77,32 @@ const SAFEGIRL_ABI = [
     stateMutability: 'nonpayable',
     type: 'function'
   },
+  // getReportStatusFor(bytes32 userKey)
+  {
+    inputs: [{ name: '_userKey', type: 'bytes32' }],
+    name: 'getReportStatusFor',
+    outputs: [
+      { name: 'exists', type: 'bool' },
+      { name: 'timestamp', type: 'uint256' },
+      { name: 'ipfsHash', type: 'string' },
+      { name: 'version', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  // getReportStatus(address user)
+  {
+    inputs: [{ name: '_user', type: 'address' }],
+    name: 'getReportStatus',
+    outputs: [
+      { name: 'exists', type: 'bool' },
+      { name: 'timestamp', type: 'uint256' },
+      { name: 'ipfsHash', type: 'string' },
+      { name: 'version', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
   // getActiveConsents(address reporter)
   {
     inputs: [{ name: '_reporter', type: 'address' }],
@@ -80,6 +130,30 @@ const SAFEGIRL_ABI = [
     type: 'function'
   },
   // Events
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'userKey', type: 'bytes32' },
+      { indexed: true, name: 'submitter', type: 'address' },
+      { indexed: false, name: 'timestamp', type: 'uint256' },
+      { indexed: false, name: 'ipfsHash', type: 'string' },
+      { indexed: false, name: 'version', type: 'uint256' }
+    ],
+    name: 'ReportSubmittedFor',
+    type: 'event'
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'userKey', type: 'bytes32' },
+      { indexed: true, name: 'submitter', type: 'address' },
+      { indexed: false, name: 'timestamp', type: 'uint256' },
+      { indexed: false, name: 'newIpfsHash', type: 'string' },
+      { indexed: false, name: 'version', type: 'uint256' }
+    ],
+    name: 'ReportUpdatedFor',
+    type: 'event'
+  },
   {
     anonymous: false,
     inputs: [

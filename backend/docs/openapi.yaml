@@ -1,0 +1,1712 @@
+openapi: 3.0.3
+info:
+  title: SafeGirl Backend API
+  description: |
+    Women's safety reporting platform with encrypted reports, blockchain verification,
+    non-blocking panic alerts, and report sharing with access control.
+
+    **Key Features:**
+    - Phone-only OTP authentication (no passwords)
+    - AES-256-GCM encryption for report data
+    - IPFS + Polygon blockchain for immutable report records
+    - Non-blocking panic alerts with SMS notifications
+    - Report access control and sharing
+    - Key recovery with PIN backup
+  version: 1.0.0
+  contact:
+    name: SafeGirl Team
+
+servers:
+  - url: http://localhost:3001
+    description: Development server
+  - url: https://api.safegirl.example.com
+    description: Production server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from signup/login verify endpoints
+
+  schemas:
+    # ========== REQUEST/RESPONSE SCHEMAS ==========
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Invalid request"
+
+    # ========== AUTH SCHEMAS ==========
+
+    SignupInitiateRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          description: Phone number (10-15 digits, any format)
+          example: "0750902921"
+
+    SignupInitiateResponse:
+      type: object
+      required: [success, message, phone]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "OTP sent to phone"
+        phone:
+          type: string
+          example: "+256750902921"
+
+    SignupVerifyRequest:
+      type: object
+      required: [phone, otp]
+      properties:
+        phone:
+          type: string
+          example: "0750902921"
+        otp:
+          type: string
+          description: 6-digit OTP
+          example: "123456"
+
+    SignupVerifyResponse:
+      type: object
+      required: [success, userId, token, pin]
+      properties:
+        success:
+          type: boolean
+          example: true
+        userId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        token:
+          type: string
+          description: JWT token (expires in 7 days)
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        phone:
+          type: string
+          example: "+256750902921"
+        pin:
+          type: string
+          nullable: true
+          description: Content lock PIN (null if not set)
+          example: null
+
+    LoginInitiateRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          example: "0750902921"
+
+    LoginInitiateResponse:
+      type: object
+      required: [success, message, phone]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "OTP sent to phone"
+        phone:
+          type: string
+          example: "+256750902921"
+
+    LoginVerifyResponse:
+      type: object
+      required: [success, userId, token, pin]
+      properties:
+        success:
+          type: boolean
+          example: true
+        userId:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: JWT token (expires in 7 days)
+        phone:
+          type: string
+        pin:
+          type: string
+          nullable: true
+
+    SetupEmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email for account recovery
+          example: "user@example.com"
+
+    SetupEmailResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Email configured for account recovery"
+        email:
+          type: string
+
+    VerifyTokenResponse:
+      type: object
+      required: [valid, userId, phone]
+      properties:
+        valid:
+          type: boolean
+          example: true
+        userId:
+          type: string
+          format: uuid
+        phone:
+          type: string
+        email:
+          type: string
+          nullable: true
+
+    SetPinRequest:
+      type: object
+      required: [pin]
+      properties:
+        pin:
+          type: string
+          description: 1-6 digit PIN for content lock
+          pattern: '^\d{1,6}$'
+          example: "1234"
+
+    SetPinResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "PIN set successfully"
+
+    GetPinResponse:
+      type: object
+      required: [pin]
+      properties:
+        pin:
+          type: string
+          nullable: true
+          example: "1234"
+
+    # ========== REPORT SCHEMAS ==========
+
+    SubmitReportRequest:
+      type: object
+      required: [payload]
+      properties:
+        payload:
+          type: object
+          description: Unencrypted report data (backend encrypts before IPFS upload)
+          example:
+            title: "Safety Incident"
+            description: "Incident details"
+            location: "Downtown"
+            timestamp: 1234567890
+        responses:
+          type: array
+          items:
+            type: string
+          description: Responses to survey questions (optional)
+          example: ["Yes", "It happened at work", "Yesterday", "For personal tracking", "No"]
+        metadata:
+          type: object
+          description: Optional metadata
+          example:
+            category: "harassment"
+            severity: "medium"
+
+    SubmitReportResponse:
+      type: object
+      required: [success, reportId, status]
+      properties:
+        success:
+          type: boolean
+          example: true
+        reportId:
+          type: string
+          description: Unique report identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+          example: "pending"
+        ipfsHash:
+          type: string
+          nullable: true
+          description: IPFS hash once confirmed
+        txHash:
+          type: string
+          nullable: true
+          description: Blockchain transaction hash once confirmed
+
+    ReportStatusResponse:
+      type: object
+      required: [reportId, status]
+      properties:
+        reportId:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+          example: "confirmed"
+        ipfsHash:
+          type: string
+          nullable: true
+        txHash:
+          type: string
+          nullable: true
+        blockNumber:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    DecryptedReportResponse:
+      type: object
+      required: [reportId, payload]
+      properties:
+        reportId:
+          type: string
+        payload:
+          type: object
+          description: Decrypted report data
+        responses:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    HealthCheckResponse:
+      type: object
+      required: [status, blockchain, ipfs, database]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        blockchain:
+          type: boolean
+          description: Blockchain connection status
+        ipfs:
+          type: boolean
+          description: IPFS service status
+        database:
+          type: boolean
+          description: Database connection status
+
+    # ========== ACCESS SCHEMAS ==========
+
+    GrantAccessRequest:
+      type: object
+      required: [reportId, viewerUserId]
+      properties:
+        reportId:
+          type: string
+          description: Report to grant access to
+        viewerUserId:
+          type: string
+          description: User to grant access to
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiry time
+
+    GrantAccessResponse:
+      type: object
+      required: [success, accessId]
+      properties:
+        success:
+          type: boolean
+          example: true
+        accessId:
+          type: string
+        message:
+          type: string
+          example: "Access granted"
+
+    RevokeAccessRequest:
+      type: object
+      required: [reportId, viewerUserId]
+      properties:
+        reportId:
+          type: string
+        viewerUserId:
+          type: string
+
+    SharedReportSummary:
+      type: object
+      required: [reportId, reporterId, sharedAt]
+      properties:
+        reportId:
+          type: string
+        reporterId:
+          type: string
+        sharedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        isActive:
+          type: boolean
+
+    ReportViewersResponse:
+      type: object
+      required: [reportId, viewers]
+      properties:
+        reportId:
+          type: string
+        viewers:
+          type: array
+          items:
+            type: object
+            properties:
+              viewerId:
+                type: string
+              grantedAt:
+                type: string
+                format: date-time
+              expiresAt:
+                type: string
+                format: date-time
+                nullable: true
+              isActive:
+                type: boolean
+
+    # ========== PANIC ALERT SCHEMAS ==========
+
+    SendPanicAlertRequest:
+      type: object
+      properties:
+        locationData:
+          type: string
+          nullable: true
+          description: Location information (GPS coords, map link, etc)
+
+    SendPanicAlertResponse:
+      type: object
+      required: [success, alertId, status]
+      properties:
+        success:
+          type: boolean
+          example: true
+        alertId:
+          type: string
+          description: Panic alert ID
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+          example: "pending"
+        message:
+          type: string
+          example: "Panic alert sent. Emergency contacts being notified."
+
+    PanicAlertRecord:
+      type: object
+      required: [id, userId, status, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+        locationData:
+          type: string
+          nullable: true
+        txHash:
+          type: string
+          nullable: true
+        blockNumber:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PanicHistoryResponse:
+      type: object
+      required: [alerts]
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PanicAlertRecord'
+        total:
+          type: integer
+
+    # ========== EMERGENCY CONTACT SCHEMAS ==========
+
+    SetPanicMessageRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          maxLength: 255
+          description: Custom message sent to emergency contacts
+          example: "I need help immediately. Please call police at 999 and come to my location."
+
+    SetPanicMessageResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+
+    PanicMessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          nullable: true
+
+    AddEmergencyContactRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          description: Contact phone number (10-15 digits)
+          example: "0701234567"
+        name:
+          type: string
+          nullable: true
+          description: Contact name from device
+          example: "Mom"
+        relationship:
+          type: string
+          nullable: true
+          description: Relationship type
+          example: "mother"
+
+    EmergencyContact:
+      type: object
+      required: [id, userId, phone, isActive, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        phone:
+          type: string
+        name:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    EmergencyContactsResponse:
+      type: object
+      required: [contacts]
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmergencyContact'
+
+    EditEmergencyContactRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        name:
+          type: string
+        relationship:
+          type: string
+
+    # ========== NOTIFICATION SCHEMAS ==========
+
+    Notification:
+      type: object
+      required: [id, userId, type, title, message, isRead, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        type:
+          type: string
+          enum: [access_granted, panic_alert, report_submitted, report_updated, access_revoked]
+        title:
+          type: string
+        message:
+          type: string
+        relatedId:
+          type: string
+          nullable: true
+          description: reportId or accessId
+        isRead:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    NotificationsResponse:
+      type: object
+      required: [notifications, total]
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    UnreadCountResponse:
+      type: object
+      required: [unreadCount]
+      properties:
+        unreadCount:
+          type: integer
+          example: 3
+
+    # ========== KEY RECOVERY SCHEMAS ==========
+
+    BackupKeyRequest:
+      type: object
+      required: [encryptedKey, keyIv, keyAuthTag, pinHash]
+      properties:
+        encryptedKey:
+          type: string
+          description: Backup key encrypted with PIN (hex)
+        keyIv:
+          type: string
+          description: IV for encryption (hex)
+        keyAuthTag:
+          type: string
+          description: Auth tag for encryption (hex)
+        pinHash:
+          type: string
+          description: SHA-256 hash of PIN
+
+    BackupKeyResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Key backup created"
+
+    RecoverKeyRequest:
+      type: object
+      required: [phone, pinHash]
+      properties:
+        phone:
+          type: string
+          description: User's phone number
+          example: "0750902921"
+        pinHash:
+          type: string
+          description: SHA-256 hash of PIN
+
+    RecoverKeyResponse:
+      type: object
+      required: [success, encryptedKey, keyIv, keyAuthTag]
+      properties:
+        success:
+          type: boolean
+          example: true
+        encryptedKey:
+          type: string
+          description: Encrypted key (hex)
+        keyIv:
+          type: string
+          description: IV (hex)
+        keyAuthTag:
+          type: string
+          description: Auth tag (hex)
+
+    # ========== SEARCH SCHEMAS ==========
+
+    SearchReportsResponse:
+      type: object
+      required: [reports, total]
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportStatusResponse'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    ReportStatsResponse:
+      type: object
+      required: [totalReports, pendingReports, confirmedReports, failedReports]
+      properties:
+        totalReports:
+          type: integer
+        pendingReports:
+          type: integer
+        confirmedReports:
+          type: integer
+        failedReports:
+          type: integer
+        byMonth:
+          type: object
+          description: Reports submitted per month
+
+paths:
+  # ========== AUTHENTICATION ENDPOINTS ==========
+
+  /api/auth/signup/initiate:
+    post:
+      summary: Initiate signup - send OTP to phone
+      operationId: initiateSignup
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupInitiateRequest'
+      responses:
+        '200':
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignupInitiateResponse'
+        '400':
+          description: Invalid phone format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited (5 attempts per 15 minutes)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Twilio SMS service unavailable
+
+  /api/auth/signup/verify:
+    post:
+      summary: Verify signup OTP - create account, return JWT
+      operationId: verifySignup
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupVerifyRequest'
+      responses:
+        '200':
+          description: Account created, JWT returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignupVerifyResponse'
+        '400':
+          description: Invalid OTP or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited (5 attempts per 15 minutes)
+
+  /api/auth/login/initiate:
+    post:
+      summary: Initiate login - send OTP to phone
+      operationId: initiateLogin
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInitiateRequest'
+      responses:
+        '200':
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginInitiateResponse'
+        '400':
+          description: Phone not registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited
+
+  /api/auth/login/verify:
+    post:
+      summary: Verify login OTP - return JWT
+      operationId: verifyLogin
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupVerifyRequest'
+      responses:
+        '200':
+          description: JWT returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginVerifyResponse'
+        '400':
+          description: Invalid OTP or expired
+
+  /api/auth/forgot-phone:
+    post:
+      summary: Account recovery step 1 - verify email
+      operationId: forgotPhone
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Recovery token sent to email
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/auth/verify-recovery:
+    post:
+      summary: Account recovery step 2 - verify recovery token
+      operationId: verifyRecoveryToken
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token]
+              properties:
+                email:
+                  type: string
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Token verified
+
+  /api/auth/change-phone/recovery:
+    post:
+      summary: Account recovery step 3 - send OTP to new phone
+      operationId: changePhoneViaRecovery
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token, newPhone]
+              properties:
+                email:
+                  type: string
+                token:
+                  type: string
+                newPhone:
+                  type: string
+      responses:
+        '200':
+          description: OTP sent to new phone
+
+  /api/auth/verify-phone-change/recovery:
+    post:
+      summary: Account recovery step 4 - verify new phone OTP, return JWT
+      operationId: verifyPhoneChangeRecovery
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token, newPhone, otp]
+              properties:
+                email:
+                  type: string
+                token:
+                  type: string
+                newPhone:
+                  type: string
+                otp:
+                  type: string
+      responses:
+        '200':
+          description: Phone changed, JWT returned
+
+  /api/auth/change-phone:
+    post:
+      summary: Authenticated user initiates phone change
+      operationId: initiatePhoneChange
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPhone]
+              properties:
+                newPhone:
+                  type: string
+      responses:
+        '200':
+          description: OTP sent to new phone
+        '401':
+          description: Unauthorized
+
+  /api/auth/verify-phone-change:
+    post:
+      summary: Authenticated user verifies phone change OTP
+      operationId: verifyPhoneChange
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPhone, otp]
+              properties:
+                newPhone:
+                  type: string
+                otp:
+                  type: string
+      responses:
+        '200':
+          description: Phone changed, new JWT returned
+
+  /api/auth/verify:
+    get:
+      summary: Verify JWT token validity
+      operationId: verifyToken
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyTokenResponse'
+        '401':
+          description: Token invalid or expired
+
+  /api/auth/setup-email:
+    post:
+      summary: Setup recovery email for authenticated user
+      operationId: setupRecoveryEmail
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetupEmailRequest'
+      responses:
+        '200':
+          description: Email configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupEmailResponse'
+        '400':
+          description: Invalid email
+
+  /api/auth/set-pin:
+    post:
+      summary: Set or update content lock PIN (1-6 digits)
+      operationId: setPin
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPinRequest'
+      responses:
+        '200':
+          description: PIN set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetPinResponse'
+        '400':
+          description: Invalid PIN format
+
+  /api/auth/get-pin:
+    get:
+      summary: Get current content lock PIN
+      operationId: getPin
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current PIN returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPinResponse'
+
+  /api/auth/delete-account:
+    post:
+      summary: Permanently delete account and all data
+      operationId: deleteAccount
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/auth/logout:
+    post:
+      summary: Logout authenticated user
+      operationId: logout
+      tags: [Authentication]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out
+
+  # ========== REPORT ENDPOINTS ==========
+
+  /api/submitReport:
+    post:
+      summary: Submit encrypted report
+      operationId: submitReport
+      tags: [Reports]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitReportRequest'
+      responses:
+        '200':
+          description: Report submitted (pending blockchain confirmation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitReportResponse'
+        '400':
+          description: Invalid payload
+        '401':
+          description: Unauthorized
+        '503':
+          description: IPFS or blockchain service unavailable
+
+  /api/reportStatus:
+    get:
+      summary: Check report status (pending/confirmed/failed)
+      operationId: getReportStatus
+      tags: [Reports]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportStatusResponse'
+        '404':
+          description: Report not found
+
+  /api/report/{reportId}/decrypt:
+    get:
+      summary: Decrypt and view report (owner or granted access)
+      operationId: getDecryptedReport
+      tags: [Reports]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Decrypted report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecryptedReportResponse'
+        '403':
+          description: Access denied
+        '404':
+          description: Report not found
+
+  /api/report/{reportId}/archive:
+    post:
+      summary: Archive report (hide from library, keep on blockchain)
+      operationId: archiveReport
+      tags: [Reports]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report archived
+        '404':
+          description: Report not found
+
+  /api/report/{reportId}/unarchive:
+    post:
+      summary: Unarchive report
+      operationId: unarchiveReport
+      tags: [Reports]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report unarchived
+
+  /api/health:
+    get:
+      summary: Health check (no auth required)
+      operationId: healthCheck
+      tags: [Reports]
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+
+  # ========== ACCESS CONTROL ENDPOINTS ==========
+
+  /api/access/grant:
+    post:
+      summary: Grant another user access to report
+      operationId: grantAccess
+      tags: [Access Control]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantAccessRequest'
+      responses:
+        '200':
+          description: Access granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantAccessResponse'
+        '403':
+          description: Not report owner
+
+  /api/access/revoke:
+    post:
+      summary: Revoke user access to report
+      operationId: revokeAccess
+      tags: [Access Control]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeAccessRequest'
+      responses:
+        '200':
+          description: Access revoked
+
+  /api/access/shared-with-me:
+    get:
+      summary: Get reports shared with authenticated user
+      operationId: getSharedReports
+      tags: [Access Control]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Shared reports list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reports:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SharedReportSummary'
+                  total:
+                    type: integer
+
+  /api/access/my-shared-reports:
+    get:
+      summary: Get reports I've shared with others
+      operationId: getMySharedReports
+      tags: [Access Control]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: My shared reports
+
+  /api/access/my-report/{reportId}/viewers:
+    get:
+      summary: Get list of users who have access to my report
+      operationId: getReportViewers
+      tags: [Access Control]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Viewers list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportViewersResponse'
+
+  /api/access/report/{reportId}:
+    get:
+      summary: View report (must own or have access)
+      operationId: viewReport
+      tags: [Access Control]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecryptedReportResponse'
+        '403':
+          description: Access denied
+
+  # ========== PANIC ALERT ENDPOINTS ==========
+
+  /api/panic-alert:
+    post:
+      summary: Send panic alert (non-blocking, SMS sent to emergency contacts)
+      operationId: sendPanicAlert
+      tags: [Panic Alerts]
+      security:
+        - bearerAuth: []
+      description: |
+        Returns immediately (<100ms) with alertId. Background processing:
+        1. Blockchain confirmation (2-5 sec)
+        2. SMS notifications to emergency contacts (rate-limited)
+        3. Audit logging
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendPanicAlertRequest'
+      responses:
+        '200':
+          description: Panic alert sent (background processing continues)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendPanicAlertResponse'
+        '429':
+          description: Rate limited (10 attempts per minute)
+
+  /api/panic-alert/history:
+    get:
+      summary: Get panic alert history
+      operationId: getPanicHistory
+      tags: [Panic Alerts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Panic alert history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PanicHistoryResponse'
+
+  # ========== EMERGENCY CONTACT ENDPOINTS ==========
+
+  /api/emergency/set-panic-message:
+    post:
+      summary: Set custom panic message for emergency contacts
+      operationId: setPanicMessage
+      tags: [Emergency]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPanicMessageRequest'
+      responses:
+        '200':
+          description: Message set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetPanicMessageResponse'
+
+  /api/emergency/panic-message:
+    get:
+      summary: Get current panic message
+      operationId: getPanicMessage
+      tags: [Emergency]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PanicMessageResponse'
+
+  /api/emergency/add-contact:
+    post:
+      summary: Add emergency contact
+      operationId: addEmergencyContact
+      tags: [Emergency]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddEmergencyContactRequest'
+      responses:
+        '200':
+          description: Contact added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  contactId:
+                    type: string
+
+  /api/emergency/contacts:
+    get:
+      summary: Get all emergency contacts
+      operationId: getEmergencyContacts
+      tags: [Emergency]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Emergency contacts list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyContactsResponse'
+
+  /api/emergency/edit-contact/{contactId}:
+    put:
+      summary: Edit emergency contact
+      operationId: editEmergencyContact
+      tags: [Emergency]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditEmergencyContactRequest'
+      responses:
+        '200':
+          description: Contact updated
+
+  /api/emergency/remove-contact/{contactId}:
+    delete:
+      summary: Remove emergency contact
+      operationId: removeEmergencyContact
+      tags: [Emergency]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contact removed
+
+  # ========== NOTIFICATION ENDPOINTS ==========
+
+  /api/notifications:
+    get:
+      summary: Get notifications for authenticated user
+      operationId: getNotifications
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: isRead
+          in: query
+          schema:
+            type: boolean
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Notifications list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationsResponse'
+
+  /api/notifications/unread/count:
+    get:
+      summary: Get unread notification count
+      operationId: getUnreadCount
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResponse'
+
+  /api/notifications/{notificationId}/read:
+    post:
+      summary: Mark notification as read
+      operationId: markAsRead
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Marked as read
+
+  /api/notifications/mark-all-read:
+    post:
+      summary: Mark all notifications as read
+      operationId: markAllAsRead
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All marked as read
+
+  /api/notifications/{notificationId}:
+    delete:
+      summary: Delete notification
+      operationId: deleteNotification
+      tags: [Notifications]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification deleted
+
+  # ========== KEY RECOVERY ENDPOINTS ==========
+
+  /api/keys/backup:
+    post:
+      summary: Backup encryption key with PIN
+      operationId: backupKeyWithPin
+      tags: [Key Recovery]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupKeyRequest'
+      responses:
+        '200':
+          description: Key backed up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupKeyResponse'
+
+  /api/keys/recover:
+    post:
+      summary: Recover encryption key using PIN and phone
+      operationId: recoverKeyWithPin
+      tags: [Key Recovery]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoverKeyRequest'
+      responses:
+        '200':
+          description: Key recovered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoverKeyResponse'
+        '400':
+          description: Invalid PIN
+        '429':
+          description: Rate limited (5 attempts per 15 minutes)
+
+  # ========== SEARCH ENDPOINTS ==========
+
+  /api/search/reports:
+    get:
+      summary: Search and filter reports
+      operationId: searchReports
+      tags: [Search]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, confirmed, failed]
+        - name: createdAfter
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: createdBefore
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchReportsResponse'
+
+  /api/search/stats:
+    get:
+      summary: Get report statistics
+      operationId: getReportStats
+      tags: [Search]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Report statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportStatsResponse'
