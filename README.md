@@ -5,6 +5,7 @@ Women's safety reporting platform with encrypted reports, blockchain verificatio
 **Table of Contents:**
 
 - [Quick Start](#quick-start)
+- [Documentation Map](#documentation-map)
 - [API Documentation](#api-documentation)
 - [Architecture](#architecture)
 - [Backend Internals](#backend-internals)
@@ -30,6 +31,28 @@ This runs:
 - 🗄️ **PostgreSQL Database**: localhost:5433
 
 That's it! Your development environment is ready.
+
+---
+
+## Documentation Map
+
+This root `README.md` is the primary onboarding and operating document.
+
+Use it for:
+
+- Setup, run, and deploy steps
+- API overview and key request examples
+- Current architecture + backend internals
+- Smart contract integration summary
+
+Optional deep-dive docs under `backend/docs/`:
+
+- `backend/docs/ARCHITECTURE.md` (extended architecture notes and historical rationale)
+- `backend/docs/DATABASE.md` (database-focused details)
+- `backend/docs/SETUP.md` (backend-specific setup walkthrough)
+- `backend/docs/openapi.yaml` (source OpenAPI spec used by Swagger UI)
+
+If there is any mismatch between docs, treat this root `README.md` as the current source of truth.
 
 ---
 
@@ -490,6 +513,7 @@ readAt                 - Read time
 - Blockchain grants/revokes are slow (2-5 sec)
 - Users expect instant revocation
 - Database checks before decryption
+- Also since we have one wallet address we cant use access control from the blockhain as it requires wallet addresses
 
 **Why isArchived instead of deletion:**
 
@@ -507,6 +531,23 @@ readAt                 - Read time
 - **Docker**: Latest version
 - **PostgreSQL**: v13+ (or via Docker)
 - **npm**: v10+
+
+### Hardhat Deploy Note (Required)
+
+Before running any Hardhat deploy command, switch to Node `22.10.0` with `nvm`:
+
+```bash
+nvm install 22.10.0
+nvm use 22.10.0
+node -v
+```
+
+Then run deploy commands (example):
+
+```bash
+npm run compile
+npm run deploy
+```
 
 ### Environment Variables
 
