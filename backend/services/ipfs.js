@@ -53,14 +53,6 @@ class IPFSService {
         throw new Error('Empty encrypted data');
       }
 
-      console.log('\n========== IPFS UPLOAD DEBUG ==========');
-      console.log('Step 1: Received data');
-      console.log('  - Filename:', filename);
-      console.log('  - Data size:', encryptedData.length, 'bytes');
-      console.log('  - Data type:', typeof encryptedData);
-      console.log('  - Is Buffer:', Buffer.isBuffer(encryptedData));
-      console.log('  - First 20 bytes:', encryptedData.slice(0, 20).toString('hex'));
-
       logger.info('IPFS', 'Starting upload to Pinata', {
         filename,
         size: encryptedData.length,
@@ -69,45 +61,31 @@ class IPFSService {
       });
 
       // Create FormData with Buffer directly (not stream)
-      console.log('\nStep 2: Creating FormData with Buffer directly');
       const formData = new FormData();
-      console.log('  - FormData instance created');
 
       // Append the Buffer directly with filename (NO stream conversion)
       formData.append('file', encryptedData, {
         filename: filename,
         contentType: 'application/octet-stream'
       });
-      console.log('  - Buffer appended directly with filename:', filename);
-      console.log('  - Buffer size:', encryptedData.length, 'bytes');
 
       // Append pinata metadata (Pinata expects this)
       formData.append('pinataMetadata', JSON.stringify({
         name: filename
       }));
-      console.log('  - pinataMetadata appended');
 
       // Append pinata options (Pinata expects this)
       formData.append('pinataOptions', JSON.stringify({
         cidVersion: 1
       }));
-      console.log('  - pinataOptions appended');
-      console.log('  - FormData _form array length:', formData._form?.length);
 
       // Get headers from form-data (Buffer allows proper Content-Length calculation)
-      console.log('\nStep 3: Getting headers from FormData');
       const formDataHeaders = formData.getHeaders();
-      console.log('  - Form-data headers:', formDataHeaders);
 
       const headers = {
         Authorization: `Bearer ${this.token}`,
         ...formDataHeaders
       };
-
-      console.log('  - Final headers:');
-      console.log('    - Authorization:', headers['Authorization'] ? 'Bearer ' + headers['Authorization'].substring(7, 20) + '...' : 'MISSING');
-      console.log('    - Content-Type:', headers['content-type']);
-      console.log('    - Content-Length:', headers['content-length'] || 'NOT SET');
 
       logger.debug('IPFS', 'Pinata request details', {
         endpoint: `${this.apiUrl}/pinFileToIPFS`,
@@ -116,15 +94,6 @@ class IPFSService {
       });
 
       // Upload to Pinata using Axios
-      console.log('\nStep 4: Sending request to Pinata via Axios');
-      console.log('  - Endpoint:', `${this.apiUrl}/pinFileToIPFS`);
-      console.log('  - Method: POST');
-      console.log('  - Headers:', {
-        'Authorization': headers['Authorization'] ? 'Bearer ****' : 'MISSING',
-        'Content-Type': headers['content-type'],
-        'Content-Length': headers['content-length'] || 'auto-calculated'
-      });
-
       let response;
       try {
         response = await axios.post(
@@ -140,37 +109,26 @@ class IPFSService {
           }
         );
       } catch (axiosError) {
-        console.log('\n❌ AXIOS ERROR');
-        console.log('  - Message:', axiosError.message);
-        console.log('  - Status:', axiosError.response?.status);
-        console.log('  - Error data:', JSON.stringify(axiosError.response?.data, null, 2));
+        logger.error('IPFS', 'Pinata request failed', {
+          message: axiosError.message,
+          status: axiosError.response?.status,
+          error: axiosError.response?.data
+        });
         throw axiosError;
       }
-
-      console.log('\nStep 5: Got response from Pinata');
-      console.log('  - Status:', response.status);
-      console.log('  - Status text:', response.statusText);
-      console.log('  - Response data:', JSON.stringify(response.data, null, 2));
 
       logger.debug('IPFS', 'Pinata response', {
         status: response.status,
         statusText: response.statusText
       });
 
-      console.log('\nStep 6: Extracting CID from response');
       const result = response.data;
       const cid = result.IpfsHash;
-      console.log('  - Extracted CID:', cid);
 
       if (!cid) {
-        console.log('  - ERROR: No CID in response!');
         logger.error('IPFS', 'No IPFS hash in Pinata response', { result });
         throw new Error('Upload successful but no IPFS hash returned');
       }
-
-      console.log('\n✅ SUCCESS: Upload complete');
-      console.log('  - CID:', cid);
-      console.log('=====================================\n');
 
       logger.success('IPFS', 'Pinata upload successful', {
         cid: cid,
@@ -186,13 +144,6 @@ class IPFSService {
 
       return cid;
     } catch (error) {
-      console.log('\n❌ UPLOAD FAILED');
-      console.log('  - Error message:', error.message);
-      if (error.response?.data) {
-        console.log('  - Pinata error details:', JSON.stringify(error.response.data, null, 2));
-      }
-      console.log('=====================================\n');
-
       logger.logIPFS('Upload', 'error', {
         filename,
         error: error.message

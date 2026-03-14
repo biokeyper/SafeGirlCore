@@ -483,7 +483,7 @@ class AccessController {
           responses: report.responses,
           metadata: report.metadata,
           createdAt: report.createdat || report.createdAt,
-          confirmedAt: report.confirmedat || report.confirmedAt,
+          submittedAt: report.submittedat || report.submittedAt,
           gasUsed: report.gasused || report.gasUsed
         }
       });

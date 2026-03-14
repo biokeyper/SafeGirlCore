@@ -19,11 +19,6 @@ class BlockchainService {
     try {
       const userKey = this.getUserKey(userId);
 
-      console.log("\n⛓️  BLOCKCHAIN.submitReport() called");
-      console.log("   userId:", userId);
-      console.log("   userKey (hash):", userKey);
-      console.log("   ipfsHash:", ipfsHash);
-
       logger.logBlockchain("Submit Report", "pending", {
         ipfsHash,
         responseCount: responses ? responses.length : 0,
@@ -54,16 +49,12 @@ class BlockchainService {
       // Get contract instance
       const contract = contractManager.getContract();
 
-      console.log("📞 Calling contract.submitReportFor()");
       // Company wallet writes per-user records using a pseudonymous user key
       const tx = await contract.submitReportFor(
         userKey,
         ipfsHash,
         finalResponses,
       );
-
-      console.log("💾 Transaction sent, waiting for confirmation...");
-      console.log("   txHash:", tx.hash);
 
       logger.info("BLOCKCHAIN", "Transaction sent", {
         txHash: tx.hash,
@@ -72,12 +63,6 @@ class BlockchainService {
 
       // Wait for confirmation (1 block)
       const receipt = await tx.wait(1);
-
-      console.log("✅ Transaction confirmed:");
-      console.log("   txHash:", receipt.hash);
-      console.log("   blockNumber:", receipt.blockNumber);
-      console.log("   gasUsed:", receipt.gasUsed.toString());
-      console.log("   from:", receipt.from);
 
       logger.logBlockchain("Submit Report", "success", {
         txHash: receipt.hash,
@@ -223,28 +208,17 @@ class BlockchainService {
     try {
       const userKey = this.getUserKey(userId);
 
-      console.log("\n⛓️  BLOCKCHAIN.getReportStatusFromContract() called");
-      console.log("   userId:", userId);
-      console.log("   userKey (hash):", userKey);
-
       logger.info("BLOCKCHAIN", "Checking report status from contract", {
         userKey,
       });
 
       const contract = contractManager.getContract();
 
-      console.log("📞 Querying contract.getReportStatusFor()");
       // Query delegated storage keyed by user ID hash.
       const [exists, timestamp, ipfsHash, version] =
         await contract.getReportStatusFor(userKey);
 
-      console.log("   exists:", exists);
-      console.log("   timestamp:", timestamp.toString());
-      console.log("   ipfsHash:", ipfsHash);
-      console.log("   version:", version.toString());
-
       if (!exists) {
-        console.log("❌ Report does not exist in contract");
         logger.info("BLOCKCHAIN", "Report does not exist in contract", {
           userKey,
         });
@@ -254,8 +228,6 @@ class BlockchainService {
           userKey,
         };
       }
-
-      console.log("✅ Report found in contract, status: confirmed");
 
       // Convert BigInt to string to avoid serialization errors
       const timestampStr = timestamp.toString();

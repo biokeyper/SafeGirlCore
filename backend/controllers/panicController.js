@@ -201,7 +201,7 @@ class PanicController {
           return databaseService.updatePanicAlert(alertId, {
             txHash: tx.txHash,
             blockNumber: tx.blockNumber,
-            status: 'confirmed'
+            status: 'submitted'
           });
         })
         .then(() => {

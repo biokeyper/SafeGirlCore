@@ -41,12 +41,12 @@ async function checkPendingReports() {
         // Update confirmations count in database
         await databaseService.updateConfirmations(report.reportid, confirmations);
 
-        // If threshold reached, mark as confirmed
+        // If threshold reached, mark as submitted
         if (confirmations >= CONFIRMATION_THRESHOLD) {
-          await databaseService.updateStatus(report.reportid, 'confirmed', {
+          await databaseService.updateStatus(report.reportid, 'submitted', {
             blockNumber: report.blocknumber
           });
-          logger.success('SCHEDULER', `Report confirmed: ${report.reportid} (${confirmations} confirmations)`);
+          logger.success('SCHEDULER', `Report submitted: ${report.reportid} (${confirmations} confirmations)`);
         } else {
           logger.info('SCHEDULER', `Report pending: ${report.reportid} (${confirmations}/${CONFIRMATION_THRESHOLD})`);
         }

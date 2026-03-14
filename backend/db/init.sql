@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   responses TEXT[],
 
   -- Status tracking
-  status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, confirmed, failed
+  status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, submitted, failed
   confirmations INTEGER DEFAULT 0,               -- Blockchain confirmation count (0-12+)
 
   -- Report type (audio or text)
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   -- Timestamps
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  confirmedAt TIMESTAMP,
+  submittedAt TIMESTAMP,
 
   -- Encryption keys (for backend-side decryption)
   encryptionKey VARCHAR(255),           -- Encrypted report key (hex)
@@ -92,11 +92,11 @@ SELECT * FROM submissions
 WHERE status = 'pending'
 ORDER BY createdAt DESC;
 
--- Create a view for confirmed submissions
-CREATE VIEW confirmed_submissions AS
+-- Create a view for submitted submissions
+CREATE VIEW submitted_submissions AS
 SELECT * FROM submissions
-WHERE status = 'confirmed'
-ORDER BY confirmedAt DESC;
+WHERE status = 'submitted'
+ORDER BY submittedAt DESC;
 
 -- ========== AUDIT LOG TABLE ==========
 -- Tracks all changes to submissions for security investigation

@@ -13,7 +13,7 @@ class SearchController {
    * GET /api/reports/search
    *
    * Query params:
-   * - status: pending, confirmed, failed, archived
+   * - status: pending, submitted, failed, archived
    * - createdAfter: ISO date string
    * - createdBefore: ISO date string
    * - limit: results per page (default 10, max 100)
@@ -53,11 +53,11 @@ class SearchController {
       };
 
       if (status) {
-        if (!['pending', 'confirmed', 'failed', 'archived'].includes(status)) {
+        if (!['pending', 'submitted', 'failed', 'archived'].includes(status)) {
           logger.warn('SEARCH', 'Invalid status filter', { status });
           return res.status(400).json({
             error: true,
-            message: 'Invalid status. Must be: pending, confirmed, failed, or archived'
+            message: 'Invalid status. Must be: pending, submitted, failed, or archived'
           });
         }
         filters.status = status;
@@ -106,7 +106,7 @@ class SearchController {
             reportId: r.reportId,
             status: r.status,
             createdAt: r.createdAt,
-            confirmedAt: r.confirmedAt,
+            submittedAt: r.submittedAt,
             txHash: r.txHash,
             ipfsHash: r.ipfsHash
           })),
@@ -164,7 +164,7 @@ class SearchController {
         data: {
           totalReports: stats.total || 0,
           pending: stats.pending || 0,
-          confirmed: stats.confirmed || 0,
+          submitted: stats.submitted || 0,
           failed: stats.failed || 0,
           archived: stats.archived || 0,
           sharedWithMe: stats.sharedWithMe || 0

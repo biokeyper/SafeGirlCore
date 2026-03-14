@@ -2,12 +2,22 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 
 const reportController = require('../controllers/reportController');
 const authMiddleware = require('../middleware/auth');
 const { validateSubmitReport, validateStatusRequest } = require('../middleware/validation');
 
-router.post('/submitReport', authMiddleware, validateSubmitReport, async (req, res, next) => {
+// Configure multer for multipart/form-data
+// Store in memory, max 50MB for audio + payload
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB
+  }
+});
+
+router.post('/submitReport', authMiddleware, upload.single('audio'), validateSubmitReport, async (req, res, next) => {
   try {
     await reportController.submitReport(req, res, next);
   } catch (error) {

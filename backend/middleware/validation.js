@@ -7,34 +7,40 @@ const logger = require('../utils/logger');
 
 /**
  * Validate submitReport request
- * Backend encryption: Frontend sends unencrypted JSON data
- * Backend encrypts before IPFS upload
+ * New format: multipart/form-data with:
+ * - payload: JSON string containing { responses, metadata }
+ * - audio: audio file (optional, only for audio reports)
  */
 function validateSubmitReport(req, res, next) {
   try {
-    const { payload, responses, metadata } = req.body;
+    const { payload } = req.body;
+    const audioFile = req.file; // multer provides the file here
 
-    // Check required fields
+    // Check required payload field
     if (!payload) {
       logger.logValidation('payload', 'Missing field');
       return res.status(400).json({
         error: true,
-        message: 'Missing field: payload (must be JSON object with report data)'
+        message: 'Missing field: payload (must be JSON string)'
       });
     }
 
-    // Payload must be a JSON object (not encrypted hex)
-    if (typeof payload !== 'object' || payload === null) {
-      logger.logValidation('payload', 'Must be a JSON object');
+    // Parse payload JSON string
+    let payloadObj;
+    try {
+      payloadObj = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    } catch (e) {
+      logger.logValidation('payload', 'Invalid JSON');
       return res.status(400).json({
         error: true,
-        message: 'payload must be a JSON object'
+        message: 'payload must be a valid JSON string'
       });
     }
+
+    const { responses, metadata } = payloadObj;
 
     // Responses are optional (frontend can send text, audio, or both)
     if (responses && Array.isArray(responses)) {
-      // If responses provided, validate each one
       for (let i = 0; i < responses.length; i++) {
         if (typeof responses[i] !== 'string') {
           logger.logValidation(`responses[${i}]`, 'Must be a string');
@@ -63,10 +69,20 @@ function validateSubmitReport(req, res, next) {
       });
     }
 
+    // For audio reports, audio file is required
+    if (metadata?.type === 'audio' && !audioFile) {
+      logger.logValidation('audio', 'Missing for audio report');
+      return res.status(400).json({
+        error: true,
+        message: 'audio file is required for audio reports'
+      });
+    }
+
     logger.info('VALIDATION', 'Submit report validated successfully', {
-      hasPayload: !!payload,
       hasResponses: !!responses,
-      hasMetadata: !!metadata
+      hasMetadata: !!metadata,
+      hasAudioFile: !!audioFile,
+      reportType: metadata?.type || 'text'
     });
     next();
   } catch (error) {
