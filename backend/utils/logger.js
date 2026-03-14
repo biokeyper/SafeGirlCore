@@ -104,7 +104,6 @@ class Logger {
     }
   }
 
-  // ========== CONVENIENCE METHODS ==========
 
   /**
    * Log incoming API request
@@ -159,5 +158,4 @@ class Logger {
   }
 }
 
-// Export singleton instance
 module.exports = new Logger();

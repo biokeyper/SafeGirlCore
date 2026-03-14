@@ -39,6 +39,10 @@ contract SafeGirl is Ownable {
     mapping(address => Consent[]) private consentLogs;
     mapping(address => EmergencyContact) private userEmergencyContacts;
 
+    // Track unique reporters to prevent reportCount inflation on repeated submissions
+    mapping(address => bool) private hasSubmittedReport;
+    mapping(bytes32 => bool) private hasSubmittedDelegatedReport;
+
     uint256 private reportCount;
     uint256 public consentExpiryDuration = 30 days;
     bool public emergencyMode = false;
@@ -88,7 +92,12 @@ contract SafeGirl is Ownable {
 
         report.version++;
 
-        reportCount++;
+        // Only increment reportCount on first submission from this reporter
+        if (!hasSubmittedReport[msg.sender]) {
+            hasSubmittedReport[msg.sender] = true;
+            reportCount++;
+        }
+
         emit ReportSubmitted(msg.sender, block.timestamp, _ipfsHash, report.version);
     }
 
@@ -112,7 +121,12 @@ contract SafeGirl is Ownable {
 
         report.version++;
 
-        reportCount++;
+        // Only increment reportCount on first submission from this user key
+        if (!hasSubmittedDelegatedReport[_userKey]) {
+            hasSubmittedDelegatedReport[_userKey] = true;
+            reportCount++;
+        }
+
         emit ReportSubmittedFor(_userKey, msg.sender, block.timestamp, _ipfsHash, report.version);
     }
 

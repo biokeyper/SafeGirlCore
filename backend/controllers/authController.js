@@ -108,7 +108,7 @@ class AuthController {
       const result = await databaseService.query(
         `INSERT INTO users (userId, phone, email, phone_verified, email_verified, pin, createdAt)
          VALUES ($1, $2, NULL, true, false, NULL, NOW())
-         RETURNING userId, phone, email, pin, createdAt`,
+         RETURNING userid, phone, email, pin, createdAt`,
         [userId, phone]
       );
 
@@ -313,9 +313,9 @@ class AuthController {
 
       const user = result.rows[0];
 
-      // Generate recovery token
+      // Generate recovery token (note: PostgreSQL returns lowercase column names)
       const tokenResult = await otpService.generateRecoveryToken(
-        user.userId,
+        user.userid,
         email,
         'phone_recovery'
       );
@@ -329,14 +329,14 @@ class AuthController {
 
       if (!emailSent) {
         logger.warn('AUTH', 'Recovery email failed to send, but token was created', {
-          userId: user.userId,
+          userId: user.userid,
           email
         });
         // Still return success, user can use token from dev logs
       }
 
       logger.success('AUTH', 'Recovery token generated and email sent', {
-        userId: user.userId,
+        userId: user.userid,
         email,
         emailSent
       });
@@ -386,14 +386,14 @@ class AuthController {
       }
 
       logger.success('AUTH', 'Recovery token verified', {
-        userId: tokenVerify.userId
+        userId: tokenVerify.userid
       });
 
       return res.status(200).json({
         success: true,
         message: 'Recovery token is valid. Ready to change phone number.',
         data: {
-          userId: tokenVerify.userId,
+          userId: tokenVerify.userid,
           email: tokenVerify.email,
           token
         }
@@ -435,8 +435,8 @@ class AuthController {
 
       // Check if new phone already exists
       const phoneExists = await databaseService.query(
-        'SELECT id FROM users WHERE phone = $1 AND userId != $2',
-        [newPhone, tokenVerify.userId]
+        'SELECT id FROM users WHERE phone = $1 AND userid != $2',
+        [newPhone, tokenVerify.userid]
       );
 
       if (phoneExists.rows && phoneExists.rows.length > 0) {
@@ -448,7 +448,7 @@ class AuthController {
       }
 
       // Create and send OTP to new phone
-      const otpResult = await otpService.createAndSendOTP(newPhone, 'phone_change', tokenVerify.userId);
+      const otpResult = await otpService.createAndSendOTP(newPhone, 'phone_change', tokenVerify.userid);
 
       logger.success('AUTH', 'OTP sent to new phone for recovery', { newPhone });
 
@@ -517,9 +517,9 @@ class AuthController {
       const result = await databaseService.query(
         `UPDATE users
          SET phone = $1, phone_verified = true, lastPhoneChange = NOW()
-         WHERE userId = $2
-         RETURNING userId, phone, email`,
-        [newPhone, tokenVerify.userId]
+         WHERE userid = $2
+         RETURNING userid, phone, email`,
+        [newPhone, tokenVerify.userid]
       );
 
       if (!result.rows || result.rows.length === 0) {
@@ -533,13 +533,13 @@ class AuthController {
 
       // Generate new JWT token with updated phone
       const newToken = jwt.sign(
-        { userId: user.userId, phone: user.phone, email: user.email },
+        { userId: user.userid, phone: user.phone, email: user.email },
         process.env.JWT_SECRET || 'default-secret-key',
         { expiresIn: '7d' }
       );
 
       logger.success('AUTH', 'Phone number changed successfully via recovery', {
-        userId: user.userId,
+        userId: user.userid,
         newPhone
       });
 
@@ -547,7 +547,7 @@ class AuthController {
         success: true,
         message: 'Phone number updated successfully',
         data: {
-          userId: user.userId,
+          userId: user.userid,
           phone: user.phone,
           email: user.email,
           token: newToken,
@@ -567,7 +567,7 @@ class AuthController {
   async initiatePhoneChange(req, res, next) {
     try {
       const { newPhone } = req.body;
-      const userId = req.user.userId;
+      const userId = req.user.userid;
 
       logger.logRequest('POST', '/api/auth/change-phone', { newPhone, userId });
 
@@ -581,7 +581,7 @@ class AuthController {
 
       // Check if new phone already exists
       const phoneExists = await databaseService.query(
-        'SELECT id FROM users WHERE phone = $1 AND userId != $2',
+        'SELECT id FROM users WHERE phone = $1 AND userid != $2',
         [newPhone, userId]
       );
 
@@ -621,7 +621,7 @@ class AuthController {
   async verifyPhoneChange(req, res, next) {
     try {
       const { newPhone, otp } = req.body;
-      const userId = req.user.userId;
+      const userId = req.user.userid;
 
       logger.logRequest('POST', '/api/auth/verify-phone-change', { newPhone, userId });
 
@@ -652,8 +652,8 @@ class AuthController {
       const result = await databaseService.query(
         `UPDATE users
          SET phone = $1, lastPhoneChange = NOW()
-         WHERE userId = $2
-         RETURNING userId, phone, email`,
+         WHERE userid = $2
+         RETURNING userid, phone, email`,
         [newPhone, userId]
       );
 
@@ -665,7 +665,7 @@ class AuthController {
 
       // Generate new JWT with updated phone
       const newToken = jwt.sign(
-        { userId: user.userId, phone: user.phone, email: user.email },
+        { userId: user.userid, phone: user.phone, email: user.email },
         process.env.JWT_SECRET || 'default-secret-key',
         { expiresIn: '7d' }
       );
@@ -679,7 +679,7 @@ class AuthController {
         success: true,
         message: 'Phone number updated successfully',
         data: {
-          userId: user.userId,
+          userId: user.userid,
           phone: user.phone,
           email: user.email,
           token: newToken,
@@ -702,7 +702,7 @@ class AuthController {
         success: true,
         message: 'Token is valid',
         data: {
-          userId: req.user.userId,
+          userId: req.user.userid,
           phone: req.user.phone,
           email: req.user.email
         }
@@ -720,7 +720,7 @@ class AuthController {
   async setupRecoveryEmail(req, res, next) {
     try {
       const { email } = req.body;
-      const userId = req.user.userId;
+      const userId = req.user.userid;
 
       logger.logRequest('POST', '/api/auth/setup-email', { userId });
 
@@ -734,7 +734,7 @@ class AuthController {
 
       // Check if email already in use by another user
       const emailExists = await databaseService.query(
-        'SELECT id FROM users WHERE email = $1 AND userId != $2',
+        'SELECT id FROM users WHERE email = $1 AND userid != $2',
         [email, userId]
       );
 
@@ -750,8 +750,8 @@ class AuthController {
       const result = await databaseService.query(
         `UPDATE users
          SET email = $1, email_verified = false
-         WHERE userId = $2
-         RETURNING userId, phone, email`,
+         WHERE userid = $2
+         RETURNING userid, phone, email`,
         [email, userId]
       );
 
@@ -793,7 +793,7 @@ class AuthController {
   async setPin(req, res, next) {
     try {
       const { pin } = req.body;
-      const userId = req.user.userId;
+      const userId = req.user.userid;
 
       logger.logRequest('POST', '/api/auth/set-pin', { userId });
 
@@ -827,7 +827,7 @@ class AuthController {
    */
   async getPin(req, res, next) {
     try {
-      const userId = req.user.userId;
+      const userId = req.user.userid;
 
       logger.logRequest('GET', '/api/auth/get-pin', { userId });
 

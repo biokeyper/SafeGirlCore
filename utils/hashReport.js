@@ -101,7 +101,6 @@ function hashReport(report, algorithm = "sha256") {
   return result;
 }
 
-// Export functions
 module.exports = {
   canonicalizeReport,
   sha256Hash,
@@ -117,8 +116,8 @@ if (require.main === module) {
     console.log("Usage: node hashReport.js <report-file.json> [algorithm]");
     console.log("  algorithm: sha256 (default), keccak256, or both");
     console.log("\nExample:");
-    console.log("  node hashReport.js test-reports/report1.json");
-    console.log("  node hashReport.js test-reports/report1.json both");
+    console.log("  node hashReport.js report.json");
+    console.log("  node hashReport.js report.json both");
     process.exit(1);
   }
 

@@ -2,7 +2,10 @@
 node_modules/
 dist/
 build/
+cache/
+artifacts/
 .DS_Store
+.qodo/
 .vscode/
 .idea/
 *.log

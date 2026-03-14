@@ -7,7 +7,6 @@ services:
     container_name: safegirl-postgres
 
     environment:
-      # Database credentials
       POSTGRES_USER: safegirl_user
       POSTGRES_PASSWORD: safegirl_password
       POSTGRES_DB: safegirl_db
@@ -62,7 +61,6 @@ services:
       # HOST is 'postgres' (service name) - Docker DNS resolves it
       DATABASE_URL: postgresql://safegirl_user:safegirl_password@postgres:5432/safegirl_db
 
-      # Blockchain settings - use Polygon Amoy testnet (Mumbai deprecated)
       POLYGON_AMOY_RPC_URL: https://rpc-amoy.polygon.technology/
 
       # Server settings

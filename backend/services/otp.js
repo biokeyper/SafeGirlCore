@@ -263,18 +263,18 @@ class OTPService {
 
       // OTP is correct - mark as used and verified
       const verifyResult = await databaseService.query(
-        'UPDATE otps SET is_used = true, verified_at = NOW() WHERE id = $1 RETURNING userId',
+        'UPDATE otps SET is_used = true, verified_at = NOW() WHERE id = $1 RETURNING userid',
         [otp.id]
       );
 
       logger.success('OTP', `OTP verified successfully for ${otpType}`, {
         phone,
-        userId: otp.userId
+        userid: otp.userid
       });
 
       return {
         success: true,
-        userId: otp.userId,
+        userid: otp.userid,
         phone,
         otpType
       };

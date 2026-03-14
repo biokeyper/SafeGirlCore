@@ -1058,7 +1058,7 @@ class DatabaseService {
       const result = await this.query(
         `INSERT INTO panic_alerts (userId, walletAddress, locationData, txHash, blockNumber)
          VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, userId, locationData, txHash, blockNumber, createdAt`,
+         RETURNING id, userid, locationData, txHash, blockNumber, createdAt`,
         [userId, walletAddress, locationData, txHash, blockNumber]
       );
 
@@ -1178,7 +1178,7 @@ class DatabaseService {
       const result = await this.query(
         `SELECT id, locationData, txHash, blockNumber, createdAt
          FROM panic_alerts
-         WHERE userId = $1
+         WHERE userid = $1
          ORDER BY createdAt DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset]
@@ -1211,7 +1211,7 @@ class DatabaseService {
            keyAuthTag = $4,
            pinHash = $5,
            backupCreatedAt = CURRENT_TIMESTAMP
-         RETURNING id, userId, backupCreatedAt`,
+         RETURNING id, userid, backupCreatedAt`,
         [userId, encryptedKey, keyIv, keyAuthTag, pinHash]
       );
 
@@ -1236,7 +1236,7 @@ class DatabaseService {
       const result = await this.query(
         `SELECT id, encryptedKey, keyIv, keyAuthTag, pinHash, backupCreatedAt, recoveryAttempts
          FROM key_backups
-         WHERE userId = $1`,
+         WHERE userid = $1`,
         [userId]
       );
 
@@ -1260,7 +1260,7 @@ class DatabaseService {
         `UPDATE key_backups
          SET recoveryAttempts = recoveryAttempts + 1,
              lastRecoveryAttempt = CURRENT_TIMESTAMP
-         WHERE userId = $1`,
+         WHERE userid = $1`,
         [userId]
       );
 

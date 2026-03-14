@@ -161,7 +161,7 @@ class KeyRecoveryController {
         });
       }
 
-      const userId = userResult.rows[0].userId;
+      const userId = userResult.rows[0].userid;
 
       // Get key backup
       const backup = await databaseService.getKeyBackup(userId);

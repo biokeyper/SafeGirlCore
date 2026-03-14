@@ -80,12 +80,12 @@ class EmailService {
         <p>We received a request to recover your SafeGirl account.</p>
 
         <p><strong>Your recovery link:</strong></p>
-        <p><a href="${recoveryLink}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+        <p><a href="${recoveryLink}" style="display: inline-block; background-color: #7c3aed; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
           Click here to recover your account
         </a></p>
 
-        <p>Or copy and paste this link in your browser:</p>
-        <p>${recoveryLink}</p>
+        <p>Or click here if the button above doesn't work:</p>
+        <p><a href="${recoveryLink}" style="color: #7c3aed; text-decoration: underline; font-weight: bold;">${recoveryLink}</a></p>
 
         <p><strong>⏱️ This link expires in 24 hours.</strong></p>
 
