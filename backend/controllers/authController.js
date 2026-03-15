@@ -3,23 +3,22 @@
  * Handles OTP-based signup, login, and account recovery
  */
 
-const jwt = require('jsonwebtoken');
-const databaseService = require('../services/database');
-const otpService = require('../services/otp');
-const emailService = require('../services/email');
-const logger = require('../utils/logger');
-const crypto = require('crypto');
+const jwt = require("jsonwebtoken");
+const databaseService = require("../services/database");
+const otpService = require("../services/otp");
+const emailService = require("../services/email");
+const logger = require("../utils/logger");
+const crypto = require("crypto");
 
 function getJwtSecretOrThrow() {
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    throw new Error('JWT_SECRET is not configured');
+    throw new Error("JWT_SECRET is not configured");
   }
   return jwtSecret;
 }
 
 class AuthController {
-
   /**
    * Step 1: Initiate Signup
    * User provides phone only, receive OTP on phone
@@ -29,52 +28,51 @@ class AuthController {
     try {
       const { phone } = req.body;
 
-      logger.logRequest('POST', '/api/auth/signup/initiate', { phone });
+      logger.logRequest("POST", "/api/auth/signup/initiate", { phone });
 
       // Validate phone
       if (!phone) {
-        logger.warn('AUTH', 'Missing phone in signup', { phone: !!phone });
+        logger.warn("AUTH", "Missing phone in signup", { phone: !!phone });
         return res.status(400).json({
           error: true,
-          message: 'phone is required'
+          message: "phone is required",
         });
       }
 
       // Check if phone already exists
       const phoneExists = await databaseService.query(
-        'SELECT id FROM users WHERE phone = $1',
-        [phone]
+        "SELECT id FROM users WHERE phone = $1",
+        [phone],
       );
 
       if (phoneExists.rows && phoneExists.rows.length > 0) {
-        logger.warn('AUTH', 'Phone number already registered', { phone });
+        logger.warn("AUTH", "Phone number already registered", { phone });
         return res.status(409).json({
           error: true,
-          message: 'Phone number already registered. Please login instead.'
+          message: "Phone number already registered. Please login instead.",
         });
       }
 
       // Create and send OTP
-      const otpResult = await otpService.createAndSendOTP(phone, 'signup');
+      const otpResult = await otpService.createAndSendOTP(phone, "signup");
 
-      logger.success('AUTH', 'Signup initiated', {
+      logger.success("AUTH", "Signup initiated", {
         phone,
-        expiresIn: otpResult.expiresIn
+        expiresIn: otpResult.expiresIn,
       });
 
       return res.status(200).json({
         success: true,
-        message: 'OTP sent to your phone. Enter the 6-digit code to continue.',
+        message: "OTP sent to your phone. Enter the 6-digit code to continue.",
         data: {
           phone,
           expiresIn: otpResult.expiresIn,
           // For testing only
-          _testOTP: otpResult._testOTP
-        }
+          _testOTP: otpResult._testOTP,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Signup initiation error', { error: error.message });
+      logger.error("AUTH", "Signup initiation error", { error: error.message });
       next(error);
     }
   }
@@ -87,25 +85,28 @@ class AuthController {
     try {
       const { phone, otp } = req.body;
 
-      logger.logRequest('POST', '/api/auth/signup/verify', { phone });
+      logger.logRequest("POST", "/api/auth/signup/verify", { phone });
 
       if (!phone || !otp) {
-        logger.warn('AUTH', 'Missing fields in signup verification', { phone: !!phone, otp: !!otp });
+        logger.warn("AUTH", "Missing fields in signup verification", {
+          phone: !!phone,
+          otp: !!otp,
+        });
         return res.status(400).json({
           error: true,
-          message: 'phone and otp are required'
+          message: "phone and otp are required",
         });
       }
 
       // Verify OTP
-      const otpVerify = await otpService.verifyOTP(phone, otp, 'signup');
+      const otpVerify = await otpService.verifyOTP(phone, otp, "signup");
 
       if (!otpVerify.success) {
         return res.status(401).json({
           error: true,
           message: otpVerify.message,
           code: otpVerify.code,
-          attemptsLeft: otpVerify.attemptsLeft
+          attemptsLeft: otpVerify.attemptsLeft,
         });
       }
 
@@ -117,11 +118,11 @@ class AuthController {
         `INSERT INTO users (userId, phone, email, phone_verified, email_verified, pin, createdAt)
          VALUES ($1, $2, NULL, true, false, NULL, NOW())
          RETURNING userid, phone, email, pin, createdAt`,
-        [userId, phone]
+        [userId, phone],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to create user');
+        throw new Error("Failed to create user");
       }
 
       const user = result.rows[0];
@@ -130,28 +131,32 @@ class AuthController {
       const token = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email || null },
         getJwtSecretOrThrow(),
-        { expiresIn: '7d' }
+        { expiresIn: "7d" },
       );
 
-      logger.success('AUTH', 'User signed up successfully', { userId: user.userid });
+      logger.success("AUTH", "User signed up successfully", {
+        userId: user.userid,
+      });
 
       return res.status(201).json({
         success: true,
-        message: 'Account created successfully. You can set a recovery email later.',
+        message:
+          "Account created successfully. You can set a recovery email later.",
         data: {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
           pin: user.pin || null,
           token,
-          expiresIn: '7d',
+          expiresIn: "7d",
           createdAt: user.createdAt,
-          hasRecoveryEmail: !!user.email
-        }
+          hasRecoveryEmail: !!user.email,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Signup verification error', { error: error.message });
+      logger.error("AUTH", "Signup verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -164,49 +169,48 @@ class AuthController {
     try {
       const { phone } = req.body;
 
-      logger.logRequest('POST', '/api/auth/login/initiate', { phone });
+      logger.logRequest("POST", "/api/auth/login/initiate", { phone });
 
       if (!phone) {
-        logger.warn('AUTH', 'Missing phone in login', { phone: !!phone });
+        logger.warn("AUTH", "Missing phone in login", { phone: !!phone });
         return res.status(400).json({
           error: true,
-          message: 'phone is required'
+          message: "phone is required",
         });
       }
 
       // Check if user exists
       const result = await databaseService.query(
-        'SELECT userId FROM users WHERE phone = $1',
-        [phone]
+        "SELECT userId FROM users WHERE phone = $1",
+        [phone],
       );
 
       if (!result.rows || result.rows.length === 0) {
         // Don't reveal if user exists or not (security)
-        logger.warn('AUTH', 'Login attempt for non-existent phone', { phone });
+        logger.warn("AUTH", "Login attempt for non-existent phone", { phone });
         return res.status(401).json({
           error: true,
-          message: 'Phone number not found. Please sign up first.'
+          message: "Phone number not found. Please sign up first.",
         });
       }
 
       // Create and send OTP
-      const otpResult = await otpService.createAndSendOTP(phone, 'login');
+      const otpResult = await otpService.createAndSendOTP(phone, "login");
 
-      logger.success('AUTH', 'Login initiated', { phone });
+      logger.success("AUTH", "Login initiated", { phone });
 
       return res.status(200).json({
         success: true,
-        message: 'OTP sent to your phone',
+        message: "OTP sent to your phone",
         data: {
           phone,
           expiresIn: otpResult.expiresIn,
           // For testing only
-          _testOTP: otpResult._testOTP
-        }
+          _testOTP: otpResult._testOTP,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Login initiation error', { error: error.message });
+      logger.error("AUTH", "Login initiation error", { error: error.message });
       next(error);
     }
   }
@@ -218,70 +222,76 @@ class AuthController {
     try {
       const { phone, otp } = req.body;
 
-      logger.logRequest('POST', '/api/auth/login/verify', { phone });
+      logger.logRequest("POST", "/api/auth/login/verify", { phone });
 
       if (!phone || !otp) {
-        logger.warn('AUTH', 'Missing phone or otp in login verification', { phone: !!phone, otp: !!otp });
+        logger.warn("AUTH", "Missing phone or otp in login verification", {
+          phone: !!phone,
+          otp: !!otp,
+        });
         return res.status(400).json({
           error: true,
-          message: 'phone and otp are required'
+          message: "phone and otp are required",
         });
       }
 
       // Verify OTP
-      const otpVerify = await otpService.verifyOTP(phone, otp, 'login');
+      const otpVerify = await otpService.verifyOTP(phone, otp, "login");
 
       if (!otpVerify.success) {
         return res.status(401).json({
           error: true,
           message: otpVerify.message,
           code: otpVerify.code,
-          attemptsLeft: otpVerify.attemptsLeft
+          attemptsLeft: otpVerify.attemptsLeft,
         });
       }
 
       // Get user info
       const userResult = await databaseService.query(
-        'SELECT userId, email, phone, pin FROM users WHERE phone = $1',
-        [phone]
+        "SELECT userId, email, phone, pin FROM users WHERE phone = $1",
+        [phone],
       );
 
       if (!userResult.rows || userResult.rows.length === 0) {
-        throw new Error('User not found after OTP verification');
+        throw new Error("User not found after OTP verification");
       }
 
       const user = userResult.rows[0];
 
       // Update last login
       await databaseService.query(
-        'UPDATE users SET lastLogin = NOW() WHERE userid = $1',
-        [user.userid]
+        "UPDATE users SET lastLogin = NOW() WHERE userid = $1",
+        [user.userid],
       );
 
       // Generate JWT token
       const token = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email },
         getJwtSecretOrThrow(),
-        { expiresIn: '7d' }
+        { expiresIn: "7d" },
       );
 
-      logger.success('AUTH', 'User logged in successfully', { userId: user.userid });
+      logger.success("AUTH", "User logged in successfully", {
+        userId: user.userid,
+      });
 
       return res.status(200).json({
         success: true,
-        message: 'Login successful',
+        message: "Login successful",
         data: {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
           pin: user.pin || null,
           token,
-          expiresIn: '7d'
-        }
+          expiresIn: "7d",
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Login verification error', { error: error.message });
+      logger.error("AUTH", "Login verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -294,28 +304,33 @@ class AuthController {
     try {
       const { email } = req.body;
 
-      logger.logRequest('POST', '/api/auth/forgot-phone', { email });
+      logger.logRequest("POST", "/api/auth/forgot-phone", { email });
 
       if (!email) {
-        logger.warn('AUTH', 'Missing email in forgot-phone', { email: !!email });
+        logger.warn("AUTH", "Missing email in forgot-phone", {
+          email: !!email,
+        });
         return res.status(400).json({
           error: true,
-          message: 'email is required'
+          message: "email is required",
         });
       }
 
       // Find user by email
       const result = await databaseService.query(
-        'SELECT userId, phone FROM users WHERE email = $1',
-        [email]
+        "SELECT userId, phone FROM users WHERE email = $1",
+        [email],
       );
 
       if (!result.rows || result.rows.length === 0) {
         // Don't reveal if email exists (security)
-        logger.warn('AUTH', 'Forgot-phone attempt for non-existent email', { email });
+        logger.warn("AUTH", "Forgot-phone attempt for non-existent email", {
+          email,
+        });
         return res.status(200).json({
           success: true,
-          message: 'If an account exists with this email, a recovery link will be sent.'
+          message:
+            "If an account exists with this email, a recovery link will be sent.",
         });
       }
 
@@ -325,48 +340,57 @@ class AuthController {
       const tokenResult = await otpService.generateRecoveryToken(
         user.userid,
         email,
-        'phone_recovery'
+        "phone_recovery",
       );
 
       // Build recovery deep link for mobile app
-      const appScheme = process.env.APP_SCHEME || 'safegirlapp';
+      const appScheme = process.env.APP_SCHEME || "safegirlapp";
       const recoveryLink = `${appScheme}://recovery/${tokenResult.token}`;
 
       // Log the link so it can be inspected in server logs during testing
-      logger.info('AUTH', 'Recovery link generated', {
+      logger.info("AUTH", "Recovery link generated", {
         userId: user.userid,
         email,
-        link: recoveryLink
+        link: recoveryLink,
       });
 
       // Send recovery email
-      const emailSent = await emailService.sendRecoveryEmail(email, recoveryLink);
+      const emailSent = await emailService.sendRecoveryEmail(
+        email,
+        recoveryLink,
+      );
 
       if (!emailSent) {
-        logger.warn('AUTH', 'Recovery email failed to send, but token was created', {
-          userId: user.userid,
-          email
-        });
+        logger.warn(
+          "AUTH",
+          "Recovery email failed to send, but token was created",
+          {
+            userId: user.userid,
+            email,
+          },
+        );
       }
 
-      logger.success('AUTH', 'Recovery token generated and email sent', {
+      logger.success("AUTH", "Recovery token generated and email sent", {
         userId: user.userid,
         email,
-        emailSent
+        emailSent,
       });
 
       return res.status(200).json({
         success: true,
-        message: 'Recovery link sent to your email',
+        message: "Recovery link sent to your email",
         data: {
           email,
           // For testing only
-          _testToken: process.env.NODE_ENV === 'development' ? tokenResult.token : undefined
-        }
+          _testToken:
+            process.env.NODE_ENV === "development"
+              ? tokenResult.token
+              : undefined,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Forgot-phone error', { error: error.message });
+      logger.error("AUTH", "Forgot-phone error", { error: error.message });
       next(error);
     }
   }
@@ -378,13 +402,15 @@ class AuthController {
     try {
       const { token } = req.body;
 
-      logger.logRequest('POST', '/api/auth/verify-recovery', { token: token ? 'present' : 'missing' });
+      logger.logRequest("POST", "/api/auth/verify-recovery", {
+        token: token ? "present" : "missing",
+      });
 
       if (!token) {
-        logger.warn('AUTH', 'Missing recovery token');
+        logger.warn("AUTH", "Missing recovery token");
         return res.status(400).json({
           error: true,
-          message: 'recovery token is required'
+          message: "recovery token is required",
         });
       }
 
@@ -395,26 +421,27 @@ class AuthController {
         return res.status(401).json({
           error: true,
           message: tokenVerify.message,
-          code: tokenVerify.code
+          code: tokenVerify.code,
         });
       }
 
-      logger.success('AUTH', 'Recovery token verified', {
-        userId: tokenVerify.userid
+      logger.success("AUTH", "Recovery token verified", {
+        userId: tokenVerify.userid,
       });
 
       return res.status(200).json({
         success: true,
-        message: 'Recovery token is valid. Ready to change phone number.',
+        message: "Recovery token is valid. Ready to change phone number.",
         data: {
           userId: tokenVerify.userid,
           email: tokenVerify.email,
-          token
-        }
+          token,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Recovery token verification error', { error: error.message });
+      logger.error("AUTH", "Recovery token verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -427,13 +454,18 @@ class AuthController {
     try {
       const { token, newPhone } = req.body;
 
-      logger.logRequest('POST', '/api/auth/change-phone/recovery', { newPhone });
+      logger.logRequest("POST", "/api/auth/change-phone/recovery", {
+        newPhone,
+      });
 
       if (!token || !newPhone) {
-        logger.warn('AUTH', 'Missing token or newPhone', { token: !!token, newPhone: !!newPhone });
+        logger.warn("AUTH", "Missing token or newPhone", {
+          token: !!token,
+          newPhone: !!newPhone,
+        });
         return res.status(400).json({
           error: true,
-          message: 'token and newPhone are required'
+          message: "token and newPhone are required",
         });
       }
 
@@ -443,43 +475,50 @@ class AuthController {
       if (!tokenVerify.success) {
         return res.status(401).json({
           error: true,
-          message: tokenVerify.message
+          message: tokenVerify.message,
         });
       }
 
       // Check if new phone already exists
       const phoneExists = await databaseService.query(
-        'SELECT id FROM users WHERE phone = $1 AND userid != $2',
-        [newPhone, tokenVerify.userid]
+        "SELECT id FROM users WHERE phone = $1 AND userid != $2",
+        [newPhone, tokenVerify.userid],
       );
 
       if (phoneExists.rows && phoneExists.rows.length > 0) {
-        logger.warn('AUTH', 'New phone already in use', { newPhone });
+        logger.warn("AUTH", "New phone already in use", { newPhone });
         return res.status(409).json({
           error: true,
-          message: 'This phone number is already registered'
+          message: "This phone number is already registered",
         });
       }
 
       // Create and send OTP to new phone
-      const otpResult = await otpService.createAndSendOTP(newPhone, 'phone_change', tokenVerify.userid);
+      const otpResult = await otpService.createAndSendOTP(
+        newPhone,
+        "phone_change",
+        tokenVerify.userid,
+      );
 
-      logger.success('AUTH', 'OTP sent to new phone for recovery', { newPhone });
+      logger.success("AUTH", "OTP sent to new phone for recovery", {
+        newPhone,
+      });
 
       return res.status(200).json({
         success: true,
-        message: 'OTP sent to new phone number',
+        message: "OTP sent to new phone number",
         data: {
           newPhone,
           token,
           expiresIn: otpResult.expiresIn,
           // For testing only
-          _testOTP: otpResult._testOTP
-        }
+          _testOTP: otpResult._testOTP,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Change phone via recovery error', { error: error.message });
+      logger.error("AUTH", "Change phone via recovery error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -491,17 +530,19 @@ class AuthController {
     try {
       const { token, newPhone, otp } = req.body;
 
-      logger.logRequest('POST', '/api/auth/verify-phone-change/recovery', { newPhone });
+      logger.logRequest("POST", "/api/auth/verify-phone-change/recovery", {
+        newPhone,
+      });
 
       if (!token || !newPhone || !otp) {
-        logger.warn('AUTH', 'Missing fields in phone change verification', {
+        logger.warn("AUTH", "Missing fields in phone change verification", {
           token: !!token,
           newPhone: !!newPhone,
-          otp: !!otp
+          otp: !!otp,
         });
         return res.status(400).json({
           error: true,
-          message: 'token, newPhone, and otp are required'
+          message: "token, newPhone, and otp are required",
         });
       }
 
@@ -511,19 +552,23 @@ class AuthController {
       if (!tokenVerify.success) {
         return res.status(401).json({
           error: true,
-          message: tokenVerify.message
+          message: tokenVerify.message,
         });
       }
 
       // Verify OTP on new phone
-      const otpVerify = await otpService.verifyOTP(newPhone, otp, 'phone_change');
+      const otpVerify = await otpService.verifyOTP(
+        newPhone,
+        otp,
+        "phone_change",
+      );
 
       if (!otpVerify.success) {
         return res.status(401).json({
           error: true,
           message: otpVerify.message,
           code: otpVerify.code,
-          attemptsLeft: otpVerify.attemptsLeft
+          attemptsLeft: otpVerify.attemptsLeft,
         });
       }
 
@@ -533,11 +578,11 @@ class AuthController {
          SET phone = $1, phone_verified = true, lastPhoneChange = NOW()
          WHERE userid = $2
          RETURNING userid, phone, email`,
-        [newPhone, tokenVerify.userid]
+        [newPhone, tokenVerify.userid],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to update phone number');
+        throw new Error("Failed to update phone number");
       }
 
       const user = result.rows[0];
@@ -549,28 +594,29 @@ class AuthController {
       const newToken = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email },
         getJwtSecretOrThrow(),
-        { expiresIn: '7d' }
+        { expiresIn: "7d" },
       );
 
-      logger.success('AUTH', 'Phone number changed successfully via recovery', {
+      logger.success("AUTH", "Phone number changed successfully via recovery", {
         userId: user.userid,
-        newPhone
+        newPhone,
       });
 
       return res.status(200).json({
         success: true,
-        message: 'Phone number updated successfully',
+        message: "Phone number updated successfully",
         data: {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
           token: newToken,
-          expiresIn: '7d'
-        }
+          expiresIn: "7d",
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Phone change recovery verification error', { error: error.message });
+      logger.error("AUTH", "Phone change recovery verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -583,48 +629,53 @@ class AuthController {
       const { newPhone } = req.body;
       const userId = req.user.userId;
 
-      logger.logRequest('POST', '/api/auth/change-phone', { newPhone, userId });
+      logger.logRequest("POST", "/api/auth/change-phone", { newPhone, userId });
 
       if (!newPhone) {
-        logger.warn('AUTH', 'Missing newPhone in phone change', { userId });
+        logger.warn("AUTH", "Missing newPhone in phone change", { userId });
         return res.status(400).json({
           error: true,
-          message: 'newPhone is required'
+          message: "newPhone is required",
         });
       }
 
       // Check if new phone already exists
       const phoneExists = await databaseService.query(
-        'SELECT id FROM users WHERE phone = $1 AND userid != $2',
-        [newPhone, userId]
+        "SELECT id FROM users WHERE phone = $1 AND userid != $2",
+        [newPhone, userId],
       );
 
       if (phoneExists.rows && phoneExists.rows.length > 0) {
-        logger.warn('AUTH', 'New phone already in use', { newPhone });
+        logger.warn("AUTH", "New phone already in use", { newPhone });
         return res.status(409).json({
           error: true,
-          message: 'This phone number is already registered'
+          message: "This phone number is already registered",
         });
       }
 
       // Create and send OTP to new phone
-      const otpResult = await otpService.createAndSendOTP(newPhone, 'phone_change', userId);
+      const otpResult = await otpService.createAndSendOTP(
+        newPhone,
+        "phone_change",
+        userId,
+      );
 
-      logger.success('AUTH', 'OTP sent to new phone', { newPhone, userId });
+      logger.success("AUTH", "OTP sent to new phone", { newPhone, userId });
 
       return res.status(200).json({
         success: true,
-        message: 'OTP sent to new phone number',
+        message: "OTP sent to new phone number",
         data: {
           newPhone,
           expiresIn: otpResult.expiresIn,
           // For testing only
-          _testOTP: otpResult._testOTP
-        }
+          _testOTP: otpResult._testOTP,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Initiate phone change error', { error: error.message });
+      logger.error("AUTH", "Initiate phone change error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -637,28 +688,35 @@ class AuthController {
       const { newPhone, otp } = req.body;
       const userId = req.user.userId;
 
-      logger.logRequest('POST', '/api/auth/verify-phone-change', { newPhone, userId });
+      logger.logRequest("POST", "/api/auth/verify-phone-change", {
+        newPhone,
+        userId,
+      });
 
       if (!newPhone || !otp) {
-        logger.warn('AUTH', 'Missing fields in phone change verification', {
+        logger.warn("AUTH", "Missing fields in phone change verification", {
           newPhone: !!newPhone,
-          otp: !!otp
+          otp: !!otp,
         });
         return res.status(400).json({
           error: true,
-          message: 'newPhone and otp are required'
+          message: "newPhone and otp are required",
         });
       }
 
       // Verify OTP
-      const otpVerify = await otpService.verifyOTP(newPhone, otp, 'phone_change');
+      const otpVerify = await otpService.verifyOTP(
+        newPhone,
+        otp,
+        "phone_change",
+      );
 
       if (!otpVerify.success) {
         return res.status(401).json({
           error: true,
           message: otpVerify.message,
           code: otpVerify.code,
-          attemptsLeft: otpVerify.attemptsLeft
+          attemptsLeft: otpVerify.attemptsLeft,
         });
       }
 
@@ -668,11 +726,11 @@ class AuthController {
          SET phone = $1, lastPhoneChange = NOW()
          WHERE userid = $2
          RETURNING userid, phone, email`,
-        [newPhone, userId]
+        [newPhone, userId],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to update phone number');
+        throw new Error("Failed to update phone number");
       }
 
       const user = result.rows[0];
@@ -681,28 +739,29 @@ class AuthController {
       const newToken = jwt.sign(
         { userId: user.userid, phone: user.phone, email: user.email },
         getJwtSecretOrThrow(),
-        { expiresIn: '7d' }
+        { expiresIn: "7d" },
       );
 
-      logger.success('AUTH', 'Phone number changed successfully', {
+      logger.success("AUTH", "Phone number changed successfully", {
         userId,
-        newPhone
+        newPhone,
       });
 
       return res.status(200).json({
         success: true,
-        message: 'Phone number updated successfully',
+        message: "Phone number updated successfully",
         data: {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
           token: newToken,
-          expiresIn: '7d'
-        }
+          expiresIn: "7d",
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Phone change verification error', { error: error.message });
+      logger.error("AUTH", "Phone change verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -714,15 +773,17 @@ class AuthController {
     try {
       return res.status(200).json({
         success: true,
-        message: 'Token is valid',
+        message: "Token is valid",
         data: {
           userId: req.user.userId,
           phone: req.user.phone,
-          email: req.user.email
-        }
+          email: req.user.email,
+        },
       });
     } catch (error) {
-      logger.error('AUTH', 'Token verification error', { error: error.message });
+      logger.error("AUTH", "Token verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -736,27 +797,27 @@ class AuthController {
       const { email } = req.body;
       const userId = req.user.userId;
 
-      logger.logRequest('POST', '/api/auth/setup-email', { userId });
+      logger.logRequest("POST", "/api/auth/setup-email", { userId });
 
       if (!email) {
-        logger.warn('AUTH', 'Missing email in setup-email', { userId });
+        logger.warn("AUTH", "Missing email in setup-email", { userId });
         return res.status(400).json({
           error: true,
-          message: 'email is required'
+          message: "email is required",
         });
       }
 
       // Check if email already in use by another user
       const emailExists = await databaseService.query(
-        'SELECT id FROM users WHERE email = $1 AND userid != $2',
-        [email, userId]
+        "SELECT id FROM users WHERE email = $1 AND userid != $2",
+        [email, userId],
       );
 
       if (emailExists.rows && emailExists.rows.length > 0) {
-        logger.warn('AUTH', 'Email already registered', { email });
+        logger.warn("AUTH", "Email already registered", { email });
         return res.status(409).json({
           error: true,
-          message: 'Email already registered by another user'
+          message: "Email already registered by another user",
         });
       }
 
@@ -766,36 +827,47 @@ class AuthController {
          SET email = $1, email_verified = false
          WHERE userid = $2
          RETURNING userid, phone, email`,
-        [email, userId]
+        [email, userId],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        logger.error('AUTH', 'User not found for email update', { userId, email, resultRows: result.rows ? result.rows.length : 0 });
-        throw new Error(`Failed to update user email - user ${userId} not found in database`);
+        logger.error("AUTH", "User not found for email update", {
+          userId,
+          email,
+          resultRows: result.rows ? result.rows.length : 0,
+        });
+        throw new Error(
+          `Failed to update user email - user ${userId} not found in database`,
+        );
       }
 
       const user = result.rows[0];
 
       // Send verification email (non-blocking)
-      emailService.sendEmailVerification(user.email, user.userid).catch(err => {
-        logger.warn('AUTH', 'Email verification send failed', { error: err.message });
-      });
+      emailService
+        .sendEmailVerification(user.email, user.userid)
+        .catch((err) => {
+          logger.warn("AUTH", "Email verification send failed", {
+            error: err.message,
+          });
+        });
 
-      logger.success('AUTH', 'Recovery email set successfully', { userId });
+      logger.success("AUTH", "Recovery email set successfully", { userId });
 
       return res.status(200).json({
         success: true,
-        message: 'Recovery email saved. Verification email sent.',
+        message: "Recovery email saved. Verification email sent.",
         data: {
           userId: user.userid,
           phone: user.phone,
           email: user.email,
-          emailVerified: false
-        }
+          emailVerified: false,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Setup recovery email error', { error: error.message });
+      logger.error("AUTH", "Setup recovery email error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -809,28 +881,27 @@ class AuthController {
       const { pin } = req.body;
       const userId = req.user.userId;
 
-      logger.logRequest('POST', '/api/auth/set-pin', { userId });
+      logger.logRequest("POST", "/api/auth/set-pin", { userId });
 
       // Update user PIN
       const result = await databaseService.query(
-        'UPDATE users SET pin = $1 WHERE userid = $2 RETURNING pin',
-        [pin, userId]
+        "UPDATE users SET pin = $1 WHERE userid = $2 RETURNING pin",
+        [pin, userId],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to set PIN');
+        throw new Error("Failed to set PIN");
       }
 
-      logger.success('AUTH', 'PIN set successfully', { userId });
+      logger.success("AUTH", "PIN set successfully", { userId });
 
       return res.status(200).json({
         success: true,
-        message: 'PIN set successfully',
-        data: { pin }
+        message: "PIN set successfully",
+        data: { pin },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Set PIN error', { error: error.message });
+      logger.error("AUTH", "Set PIN error", { error: error.message });
       next(error);
     }
   }
@@ -843,28 +914,27 @@ class AuthController {
     try {
       const userId = req.user.userId;
 
-      logger.logRequest('GET', '/api/auth/get-pin', { userId });
+      logger.logRequest("GET", "/api/auth/get-pin", { userId });
 
       const result = await databaseService.query(
-        'SELECT pin FROM users WHERE userid = $1',
-        [userId]
+        "SELECT pin FROM users WHERE userid = $1",
+        [userId],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('User not found');
+        throw new Error("User not found");
       }
 
       const pin = result.rows[0]?.pin || null;
 
-      logger.success('AUTH', 'PIN retrieved successfully', { userId });
+      logger.success("AUTH", "PIN retrieved successfully", { userId });
 
       return res.status(200).json({
         success: true,
-        data: { pin, hasPin: !!pin }
+        data: { pin, hasPin: !!pin },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Get PIN error', { error: error.message });
+      logger.error("AUTH", "Get PIN error", { error: error.message });
       next(error);
     }
   }
@@ -879,27 +949,33 @@ class AuthController {
     try {
       const { email, userId } = req.query;
 
-      logger.logRequest('GET', '/api/auth/verify-email', { email, userId });
+      logger.logRequest("GET", "/api/auth/verify-email", { email, userId });
 
       if (!email || !userId) {
-        logger.warn('AUTH', 'Missing email or userId in verify-email', { email: !!email, userId: !!userId });
+        logger.warn("AUTH", "Missing email or userId in verify-email", {
+          email: !!email,
+          userId: !!userId,
+        });
         return res.status(400).json({
           error: true,
-          message: 'email and userId are required'
+          message: "email and userId are required",
         });
       }
 
       // Check if user exists with this email and userId
       const userResult = await databaseService.query(
-        'SELECT userid, email, email_verified FROM users WHERE userid = $1 AND email = $2',
-        [userId, email]
+        "SELECT userid, email, email_verified FROM users WHERE userid = $1 AND email = $2",
+        [userId, email],
       );
 
       if (!userResult.rows || userResult.rows.length === 0) {
-        logger.warn('AUTH', 'User or email mismatch in verify-email', { userId, email });
+        logger.warn("AUTH", "User or email mismatch in verify-email", {
+          userId,
+          email,
+        });
         return res.status(404).json({
           error: true,
-          message: 'User or email not found'
+          message: "User or email not found",
         });
       }
 
@@ -907,42 +983,43 @@ class AuthController {
 
       // Check if already verified
       if (user.email_verified) {
-        logger.info('AUTH', 'Email already verified', { userId, email });
+        logger.info("AUTH", "Email already verified", { userId, email });
         return res.status(200).json({
           success: true,
-          message: 'Email is already verified',
+          message: "Email is already verified",
           data: {
             userId,
             email,
-            emailVerified: true
-          }
+            emailVerified: true,
+          },
         });
       }
 
       // Update email_verified status
       const updateResult = await databaseService.query(
-        'UPDATE users SET email_verified = true WHERE userid = $1 RETURNING userid, email, email_verified',
-        [userId]
+        "UPDATE users SET email_verified = true WHERE userid = $1 RETURNING userid, email, email_verified",
+        [userId],
       );
 
       if (!updateResult.rows || updateResult.rows.length === 0) {
-        throw new Error('Failed to update email verification status');
+        throw new Error("Failed to update email verification status");
       }
 
-      logger.success('AUTH', 'Email verified successfully', { userId, email });
+      logger.success("AUTH", "Email verified successfully", { userId, email });
 
       return res.status(200).json({
         success: true,
-        message: 'Email verified successfully',
+        message: "Email verified successfully",
         data: {
           userId,
           email,
-          emailVerified: true
-        }
+          emailVerified: true,
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Email verification error', { error: error.message });
+      logger.error("AUTH", "Email verification error", {
+        error: error.message,
+      });
       next(error);
     }
   }
@@ -959,28 +1036,27 @@ class AuthController {
     try {
       const userId = req.user?.userId;
 
-      logger.logRequest('POST', '/api/auth/logout', { userId });
+      logger.logRequest("POST", "/api/auth/logout", { userId });
 
       if (!userId) {
         return res.status(401).json({
           error: true,
-          message: 'Authentication required'
+          message: "Authentication required",
         });
       }
 
-      logger.success('AUTH', 'User logged out', { userId });
+      logger.success("AUTH", "User logged out", { userId });
 
       return res.status(200).json({
         success: true,
-        message: 'Successfully logged out',
+        message: "Successfully logged out",
         data: {
           userId,
-          loggedOutAt: new Date().toISOString()
-        }
+          loggedOutAt: new Date().toISOString(),
+        },
       });
-
     } catch (error) {
-      logger.error('AUTH', 'Logout error', { error: error.message });
+      logger.error("AUTH", "Logout error", { error: error.message });
       next(error);
     }
   }

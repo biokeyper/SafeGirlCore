@@ -271,13 +271,32 @@ class PanicController {
         success: true,
         message: 'Panic alert history retrieved',
         data: {
-          alerts: alerts.map(alert => ({
-            id: alert.id,
-            locationData: alert.locationData,
-            txHash: alert.txHash,
-            blockNumber: alert.blockNumber,
-            createdAt: alert.createdAt
-          }))
+          alerts: alerts.map(alert => {
+            const txHash = alert.txhash || alert.txHash;
+            const blockNumber = alert.blocknumber || alert.blockNumber;
+
+            let status = 'pending';
+            if (txHash && blockNumber) {
+              status = 'confirmed';
+            } else if (txHash && !blockNumber) {
+              status = 'failed';
+            }
+
+            return {
+              id: alert.id,
+              locationData: alert.locationdata || alert.locationData,
+              panicMessage: alert.custompanicmessage || null,
+              txHash: txHash,
+              blockNumber: blockNumber,
+              status: status,
+              createdAt: alert.createdat || alert.createdAt,
+              emergencyContacts: (alert.emergencyContacts || []).map(contact => ({
+                name: contact.name,
+                phone: contact.phone,
+                relationship: contact.relationship
+              }))
+            };
+          })
         }
       });
 

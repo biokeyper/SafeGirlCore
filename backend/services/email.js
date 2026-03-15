@@ -3,9 +3,9 @@
  * Handles sending emails using nodemailer and SMS using Twilio
  */
 
-const nodemailer = require('nodemailer');
-const twilio = require('twilio');
-const logger = require('../utils/logger');
+const nodemailer = require("nodemailer");
+const twilio = require("twilio");
+const logger = require("../utils/logger");
 
 class EmailService {
   constructor() {
@@ -23,42 +23,52 @@ class EmailService {
     try {
       // Initialize Email service
       if (!process.env.EMAIL_FROM || !process.env.EMAIL_PASSWORD) {
-        logger.warn('EMAIL', 'Email credentials not configured - email service disabled');
+        logger.warn(
+          "EMAIL",
+          "Email credentials not configured - email service disabled",
+        );
       } else {
         // Create transporter for Gmail (adjust for other providers)
         this.transporter = nodemailer.createTransport({
-          service: 'gmail',  // Change this if using different email provider
+          service: "gmail", // Change this if using different email provider
           auth: {
             user: process.env.EMAIL_FROM,
-            pass: process.env.EMAIL_PASSWORD  // Use app password for Gmail
-          }
+            pass: process.env.EMAIL_PASSWORD, // Use app password for Gmail
+          },
         });
 
         // Test connection
         await this.transporter.verify();
-        logger.success('EMAIL', 'Email service initialized', {
-          email: process.env.EMAIL_FROM
+        logger.success("EMAIL", "Email service initialized", {
+          email: process.env.EMAIL_FROM,
         });
       }
 
       // Initialize Twilio SMS service
-      if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
-        logger.warn('SMS', 'Twilio credentials not configured - SMS service disabled');
+      if (
+        !process.env.TWILIO_ACCOUNT_SID ||
+        !process.env.TWILIO_AUTH_TOKEN ||
+        !process.env.TWILIO_PHONE_NUMBER
+      ) {
+        logger.warn(
+          "SMS",
+          "Twilio credentials not configured - SMS service disabled",
+        );
       } else {
         this.twilioClient = twilio(
           process.env.TWILIO_ACCOUNT_SID,
-          process.env.TWILIO_AUTH_TOKEN
+          process.env.TWILIO_AUTH_TOKEN,
         );
-        logger.success('SMS', 'Twilio SMS service initialized', {
-          phoneNumber: this.twilioPhoneNumber
+        logger.success("SMS", "Twilio SMS service initialized", {
+          phoneNumber: this.twilioPhoneNumber,
         });
       }
 
       this.initialized = true;
       return true;
     } catch (error) {
-      logger.error('EMAIL', 'Failed to initialize services', {
-        error: error.message
+      logger.error("EMAIL", "Failed to initialize services", {
+        error: error.message,
       });
       return false;
     }
@@ -70,12 +80,12 @@ class EmailService {
   async sendRecoveryEmail(recipientEmail, recoveryLink) {
     try {
       if (!this.initialized) {
-        logger.warn('EMAIL', 'Email service not initialized, skipping send');
+        logger.warn("EMAIL", "Email service not initialized, skipping send");
         return false;
       }
 
-      const subject = 'SafeGirl - Account Recovery';
-      const recoveryToken = recoveryLink.split('/').pop();
+      const subject = "SafeGirl - Account Recovery";
+      const recoveryToken = recoveryLink.split("/").pop();
       const htmlContent = `
         <h2>SafeGirl Account Recovery</h2>
         <p>We received a request to recover your SafeGirl account.</p>
@@ -123,21 +133,21 @@ If you didn't request this, please ignore this email.
         to: recipientEmail,
         subject,
         html: htmlContent,
-        text: plainText
+        text: plainText,
       };
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      logger.success('EMAIL', 'Recovery email sent', {
+      logger.success("EMAIL", "Recovery email sent", {
         to: recipientEmail,
-        messageId: info.messageId
+        messageId: info.messageId,
       });
 
       return true;
     } catch (error) {
-      logger.error('EMAIL', 'Failed to send recovery email', {
+      logger.error("EMAIL", "Failed to send recovery email", {
         error: error.message,
-        to: recipientEmail
+        to: recipientEmail,
       });
       return false;
     }
@@ -149,11 +159,14 @@ If you didn't request this, please ignore this email.
   async sendOTPEmail(recipientEmail, otpCode) {
     try {
       if (!this.initialized) {
-        logger.warn('EMAIL', 'Email service not initialized, skipping OTP send');
+        logger.warn(
+          "EMAIL",
+          "Email service not initialized, skipping OTP send",
+        );
         return false;
       }
 
-      const subject = 'SafeGirl - Your verification code';
+      const subject = "SafeGirl - Your verification code";
       const htmlContent = `
         <h2>SafeGirl Verification Code</h2>
         <p>Your verification code is:</p>
@@ -185,21 +198,21 @@ Do not share this code with anyone.
         to: recipientEmail,
         subject,
         html: htmlContent,
-        text: plainText
+        text: plainText,
       };
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      logger.success('EMAIL', 'OTP email sent', {
+      logger.success("EMAIL", "OTP email sent", {
         to: recipientEmail,
-        messageId: info.messageId
+        messageId: info.messageId,
       });
 
       return true;
     } catch (error) {
-      logger.error('EMAIL', 'Failed to send OTP email', {
+      logger.error("EMAIL", "Failed to send OTP email", {
         error: error.message,
-        to: recipientEmail
+        to: recipientEmail,
       });
       return false;
     }
@@ -211,11 +224,14 @@ Do not share this code with anyone.
   async sendWelcomeEmail(recipientEmail, userId) {
     try {
       if (!this.initialized) {
-        logger.warn('EMAIL', 'Email service not initialized, skipping welcome send');
+        logger.warn(
+          "EMAIL",
+          "Email service not initialized, skipping welcome send",
+        );
         return false;
       }
 
-      const subject = 'Welcome to SafeGirl!';
+      const subject = "Welcome to SafeGirl!";
       const htmlContent = `
         <h2>Welcome to SafeGirl! 👋</h2>
         <p>Thank you for creating your SafeGirl account.</p>
@@ -255,22 +271,22 @@ Your privacy and safety are our top priority.
         to: recipientEmail,
         subject,
         html: htmlContent,
-        text: plainText
+        text: plainText,
       };
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      logger.success('EMAIL', 'Welcome email sent', {
+      logger.success("EMAIL", "Welcome email sent", {
         to: recipientEmail,
         userId,
-        messageId: info.messageId
+        messageId: info.messageId,
       });
 
       return true;
     } catch (error) {
-      logger.error('EMAIL', 'Failed to send welcome email', {
+      logger.error("EMAIL", "Failed to send welcome email", {
         error: error.message,
-        to: recipientEmail
+        to: recipientEmail,
       });
       return false;
     }
@@ -282,20 +298,23 @@ Your privacy and safety are our top priority.
   async sendEmailVerification(recipientEmail, userId) {
     try {
       if (!this.initialized) {
-        logger.warn('EMAIL', 'Email service not initialized, skipping verification send');
+        logger.warn(
+          "EMAIL",
+          "Email service not initialized, skipping verification send",
+        );
         return false;
       }
 
-      const subject = 'SafeGirl - Verify Your Email Address';
+      const subject = "SafeGirl - Verify Your Email Address";
       // Deep link format for mobile app: APP_SCHEME://verify-email/email/userId
-      const appScheme = process.env.APP_SCHEME || 'safegirlapp';
+      const appScheme = process.env.APP_SCHEME || "safegirlapp";
       const verificationLink = `${appScheme}://verify-email/${encodeURIComponent(recipientEmail)}/${userId}`;
 
       // Log the link so it can be inspected in server logs during testing
-      logger.info('EMAIL', 'Verification link generated', {
+      logger.info("EMAIL", "Verification link generated", {
         to: recipientEmail,
         userId,
-        link: verificationLink
+        link: verificationLink,
       });
 
       const htmlContent = `
@@ -344,22 +363,22 @@ SafeGirl - Women Safety Platform
         to: recipientEmail,
         subject,
         html: htmlContent,
-        text: plainText
+        text: plainText,
       };
 
       const info = await this.transporter.sendMail(mailOptions);
 
-      logger.success('EMAIL', 'Email verification sent', {
+      logger.success("EMAIL", "Email verification sent", {
         to: recipientEmail,
         userId,
-        messageId: info.messageId
+        messageId: info.messageId,
       });
 
       return true;
     } catch (error) {
-      logger.error('EMAIL', 'Failed to send email verification', {
+      logger.error("EMAIL", "Failed to send email verification", {
         error: error.message,
-        to: recipientEmail
+        to: recipientEmail,
       });
       return false;
     }
@@ -372,32 +391,32 @@ SafeGirl - Women Safety Platform
   async sendSMS(toPhoneNumber, messageBody) {
     try {
       if (!this.twilioClient) {
-        logger.warn('SMS', 'Twilio service not initialized, skipping SMS send');
+        logger.warn("SMS", "Twilio service not initialized, skipping SMS send");
         return false;
       }
 
       if (!toPhoneNumber || !messageBody) {
-        logger.warn('SMS', 'Missing phone number or message body');
+        logger.warn("SMS", "Missing phone number or message body");
         return false;
       }
 
       const message = await this.twilioClient.messages.create({
         body: messageBody,
         from: this.twilioPhoneNumber,
-        to: toPhoneNumber
+        to: toPhoneNumber,
       });
 
-      logger.success('SMS', 'SMS sent successfully', {
+      logger.success("SMS", "SMS sent successfully", {
         to: toPhoneNumber,
         messageId: message.sid,
-        status: message.status
+        status: message.status,
       });
 
       return true;
     } catch (error) {
-      logger.error('SMS', 'Failed to send SMS', {
+      logger.error("SMS", "Failed to send SMS", {
         error: error.message,
-        to: toPhoneNumber
+        to: toPhoneNumber,
       });
       return false;
     }

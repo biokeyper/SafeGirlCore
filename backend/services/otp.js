@@ -4,25 +4,25 @@
  * SMS via Twilio
  */
 
-const databaseService = require('./database');
-const logger = require('../utils/logger');
-const crypto = require('crypto');
+const databaseService = require("./database");
+const logger = require("../utils/logger");
+const crypto = require("crypto");
 
 // Twilio integration
 let twilioClient = null;
 try {
   if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-    const twilio = require('twilio');
+    const twilio = require("twilio");
     twilioClient = twilio(
       process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
+      process.env.TWILIO_AUTH_TOKEN,
     );
-    logger.success('OTP', 'Twilio client initialized');
+    logger.success("OTP", "Twilio client initialized");
   } else {
-    logger.warn('OTP', 'Twilio not configured - SMS will be simulated');
+    logger.warn("OTP", "Twilio not configured - SMS will be simulated");
   }
 } catch (error) {
-  logger.error('OTP', 'Failed to initialize Twilio', { error: error.message });
+  logger.error("OTP", "Failed to initialize Twilio", { error: error.message });
 }
 
 class OTPService {
@@ -48,23 +48,23 @@ class OTPService {
    */
   normalizePhoneNumber(phone) {
     // Remove all non-digit characters
-    let normalized = phone.replace(/\D/g, '');
+    let normalized = phone.replace(/\D/g, "");
 
     // If starts with 0 (local format), replace with country code from env
-    if (normalized.startsWith('0')) {
-      const countryCode = process.env.COUNTRY_CODE || '256'; // Default to Uganda if not set
+    if (normalized.startsWith("0")) {
+      const countryCode = process.env.COUNTRY_CODE || "256"; // Default to Uganda if not set
       normalized = countryCode + normalized.substring(1);
     }
 
     // Ensure it has the + prefix
-    if (!normalized.startsWith('+')) {
-      normalized = '+' + normalized;
+    if (!normalized.startsWith("+")) {
+      normalized = "+" + normalized;
     }
 
-    logger.debug('OTP', 'Phone normalized', {
+    logger.debug("OTP", "Phone normalized", {
       original: phone,
       normalized,
-      countryCode: process.env.COUNTRY_CODE
+      countryCode: process.env.COUNTRY_CODE,
     });
 
     return normalized;
@@ -86,35 +86,38 @@ class OTPService {
           const message = await twilioClient.messages.create({
             body: `Your SafeGirl verification code is: ${otpCode}. Valid for 5 minutes.`,
             from: process.env.TWILIO_PHONE_NUMBER,
-            to: normalizedPhone
+            to: normalizedPhone,
           });
 
-          logger.success('OTP', 'SMS sent via Twilio', {
+          logger.success("OTP", "SMS sent via Twilio", {
             phone,
-            messageId: message.sid
+            messageId: message.sid,
           });
 
           return true;
         } catch (twilioError) {
-          logger.error('OTP', 'Twilio SMS failed', {
+          logger.error("OTP", "Twilio SMS failed", {
             error: twilioError.message,
-            phone
+            phone,
           });
           // Don't fallback to mock, let it fail properly
           return false;
         }
       } else {
         // Development mode: just log it
-        logger.info('OTP', `[DEV MODE] SMS would be sent to ${phone}`, {
+        logger.info("OTP", `[DEV MODE] SMS would be sent to ${phone}`, {
           phone,
           otpCode,
-          note: 'Configure Twilio to send real SMS'
+          note: "Configure Twilio to send real SMS",
         });
 
         return true;
       }
     } catch (error) {
-      logger.error('OTP', 'Failed to send SMS', { error: error.message, phone });
+      logger.error("OTP", "Failed to send SMS", {
+        error: error.message,
+        phone,
+      });
       return false;
     }
   }
@@ -130,14 +133,14 @@ class OTPService {
       const otpCode = this.generateOTPCode();
       const expiresAt = new Date(Date.now() + this.OTP_EXPIRY_MINUTES * 60000);
 
-      logger.info('OTP', `Creating ${otpType} OTP for ${phone}`);
+      logger.info("OTP", `Creating ${otpType} OTP for ${phone}`);
 
       // Expose OTP in logs only for development and testing workflows.
-      logger.success('OTP', `Generated OTP Code: ${otpCode}`, {
+      logger.success("OTP", `Generated OTP Code: ${otpCode}`, {
         phone,
         otpType,
         expiresInMinutes: this.OTP_EXPIRY_MINUTES,
-        note: 'Use this code to complete signup/login'
+        note: "Use this code to complete signup/login",
       });
 
       // Store OTP in database
@@ -145,21 +148,21 @@ class OTPService {
         `INSERT INTO otps (userId, phone, otp_code, otp_type, expires_at)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id, otp_code, expires_at`,
-        [userId, phone, otpCode, otpType, expiresAt]
+        [userId, phone, otpCode, otpType, expiresAt],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to create OTP in database');
+        throw new Error("Failed to create OTP in database");
       }
 
       // Send OTP via SMS
       const smsSent = await this.sendOTPViaSMS(phone, otpCode);
 
-      logger.success('OTP', `OTP created and sent for ${otpType}`, {
+      logger.success("OTP", `OTP created and sent for ${otpType}`, {
         phone,
         otpType,
         userId,
-        expiresAt
+        expiresAt,
       });
 
       return {
@@ -169,13 +172,13 @@ class OTPService {
         expiresIn: this.OTP_EXPIRY_MINUTES * 60, // in seconds
         smsSent,
         // Returned only in development mode.
-        _testOTP: process.env.NODE_ENV === 'development' ? otpCode : undefined
+        _testOTP: process.env.NODE_ENV === "development" ? otpCode : undefined,
       };
     } catch (error) {
-      logger.error('OTP', 'Failed to create OTP', {
+      logger.error("OTP", "Failed to create OTP", {
         error: error.message,
         phone,
-        otpType
+        otpType,
       });
       throw error;
     }
@@ -189,7 +192,7 @@ class OTPService {
    */
   async verifyOTP(phone, otpCode, otpType) {
     try {
-      logger.info('OTP', `Verifying ${otpType} OTP for ${phone}`);
+      logger.info("OTP", `Verifying ${otpType} OTP for ${phone}`);
 
       // Find valid OTP
       const result = await databaseService.query(
@@ -202,15 +205,15 @@ class OTPService {
          AND expires_at > NOW()
          ORDER BY created_at DESC
          LIMIT 1`,
-        [phone, otpType]
+        [phone, otpType],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        logger.warn('OTP', `No valid OTP found for ${otpType}`, { phone });
+        logger.warn("OTP", `No valid OTP found for ${otpType}`, { phone });
         return {
           success: false,
-          message: 'No valid OTP found. Please request a new one.',
-          code: 'NO_VALID_OTP'
+          message: "No valid OTP found. Please request a new one.",
+          code: "NO_VALID_OTP",
         };
       }
 
@@ -224,65 +227,65 @@ class OTPService {
         if (newAttempts >= otp.max_attempts) {
           // Mark as used (locked)
           await databaseService.query(
-            'UPDATE otps SET is_used = true WHERE id = $1',
-            [otp.id]
+            "UPDATE otps SET is_used = true WHERE id = $1",
+            [otp.id],
           );
 
-          logger.warn('OTP', `Max attempts reached for ${otpType}`, {
+          logger.warn("OTP", `Max attempts reached for ${otpType}`, {
             phone,
-            attempts: newAttempts
+            attempts: newAttempts,
           });
 
           return {
             success: false,
-            message: 'Too many failed attempts. Please request a new OTP.',
-            code: 'MAX_ATTEMPTS',
-            attemptsLeft: 0
+            message: "Too many failed attempts. Please request a new OTP.",
+            code: "MAX_ATTEMPTS",
+            attemptsLeft: 0,
           };
         }
 
         // Update attempts
         await databaseService.query(
-          'UPDATE otps SET attempts = $1 WHERE id = $2',
-          [newAttempts, otp.id]
+          "UPDATE otps SET attempts = $1 WHERE id = $2",
+          [newAttempts, otp.id],
         );
 
-        logger.warn('OTP', `Invalid OTP code for ${otpType}`, {
+        logger.warn("OTP", `Invalid OTP code for ${otpType}`, {
           phone,
           attempts: newAttempts,
-          maxAttempts: otp.max_attempts
+          maxAttempts: otp.max_attempts,
         });
 
         return {
           success: false,
-          message: 'Invalid OTP code',
-          code: 'INVALID_OTP',
-          attemptsLeft: otp.max_attempts - newAttempts
+          message: "Invalid OTP code",
+          code: "INVALID_OTP",
+          attemptsLeft: otp.max_attempts - newAttempts,
         };
       }
 
       // OTP is correct - mark as used and verified
       const verifyResult = await databaseService.query(
-        'UPDATE otps SET is_used = true, verified_at = NOW() WHERE id = $1 RETURNING userid',
-        [otp.id]
+        "UPDATE otps SET is_used = true, verified_at = NOW() WHERE id = $1 RETURNING userid",
+        [otp.id],
       );
 
-      logger.success('OTP', `OTP verified successfully for ${otpType}`, {
+      logger.success("OTP", `OTP verified successfully for ${otpType}`, {
         phone,
-        userid: otp.userid
+        userid: otp.userid,
       });
 
       return {
         success: true,
         userid: otp.userid,
         phone,
-        otpType
+        otpType,
       };
     } catch (error) {
-      logger.error('OTP', 'OTP verification failed', {
+      logger.error("OTP", "OTP verification failed", {
         error: error.message,
         phone,
-        otpType
+        otpType,
       });
       throw error;
     }
@@ -293,39 +296,39 @@ class OTPService {
    */
   async generateRecoveryToken(userId, email, tokenType, newPhone = null) {
     try {
-      const token = crypto.randomBytes(32).toString('hex');
+      const token = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 24 * 60 * 60000); // 24 hours
 
-      logger.info('OTP', `Creating ${tokenType} recovery token for ${email}`);
+      logger.info("OTP", `Creating ${tokenType} recovery token for ${email}`);
 
       const result = await databaseService.query(
         `INSERT INTO recovery_tokens (userId, email, token, token_type, new_phone, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING token, expires_at`,
-        [userId, email, token, tokenType, newPhone, expiresAt]
+        [userId, email, token, tokenType, newPhone, expiresAt],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to create recovery token');
+        throw new Error("Failed to create recovery token");
       }
 
-      logger.success('OTP', `Recovery token created for ${tokenType}`, {
+      logger.success("OTP", `Recovery token created for ${tokenType}`, {
         userId,
         email,
-        expiresAt
+        expiresAt,
       });
 
       return {
         success: true,
         token: result.rows[0].token,
         expiresAt,
-        expiresIn: 24 * 60 * 60 // in seconds
+        expiresIn: 24 * 60 * 60, // in seconds
       };
     } catch (error) {
-      logger.error('OTP', 'Failed to generate recovery token', {
+      logger.error("OTP", "Failed to generate recovery token", {
         error: error.message,
         userId,
-        email
+        email,
       });
       throw error;
     }
@@ -336,7 +339,7 @@ class OTPService {
    */
   async verifyRecoveryToken(token) {
     try {
-      logger.info('OTP', 'Verifying recovery token');
+      logger.info("OTP", "Verifying recovery token");
 
       const result = await databaseService.query(
         `SELECT userId, email, token_type, new_phone, is_used, expires_at
@@ -344,23 +347,23 @@ class OTPService {
          WHERE token = $1
          AND is_used = false
          AND expires_at > NOW()`,
-        [token]
+        [token],
       );
 
       if (!result.rows || result.rows.length === 0) {
-        logger.warn('OTP', 'Invalid or expired recovery token');
+        logger.warn("OTP", "Invalid or expired recovery token");
         return {
           success: false,
-          message: 'Invalid or expired recovery token',
-          code: 'INVALID_TOKEN'
+          message: "Invalid or expired recovery token",
+          code: "INVALID_TOKEN",
         };
       }
 
       const recoveryToken = result.rows[0];
 
-      logger.success('OTP', 'Recovery token verified', {
+      logger.success("OTP", "Recovery token verified", {
         userId: recoveryToken.userId,
-        tokenType: recoveryToken.token_type
+        tokenType: recoveryToken.token_type,
       });
 
       return {
@@ -368,11 +371,11 @@ class OTPService {
         userId: recoveryToken.userId,
         email: recoveryToken.email,
         tokenType: recoveryToken.token_type,
-        newPhone: recoveryToken.new_phone
+        newPhone: recoveryToken.new_phone,
       };
     } catch (error) {
-      logger.error('OTP', 'Recovery token verification failed', {
-        error: error.message
+      logger.error("OTP", "Recovery token verification failed", {
+        error: error.message,
       });
       throw error;
     }
@@ -384,14 +387,14 @@ class OTPService {
   async markRecoveryTokenUsed(token) {
     try {
       await databaseService.query(
-        'UPDATE recovery_tokens SET is_used = true, used_at = NOW() WHERE token = $1',
-        [token]
+        "UPDATE recovery_tokens SET is_used = true, used_at = NOW() WHERE token = $1",
+        [token],
       );
 
-      logger.info('OTP', 'Recovery token marked as used');
+      logger.info("OTP", "Recovery token marked as used");
     } catch (error) {
-      logger.error('OTP', 'Failed to mark recovery token as used', {
-        error: error.message
+      logger.error("OTP", "Failed to mark recovery token as used", {
+        error: error.message,
       });
       throw error;
     }
@@ -403,17 +406,17 @@ class OTPService {
   async cleanupExpiredOTPs() {
     try {
       const result = await databaseService.query(
-        'DELETE FROM otps WHERE expires_at < NOW() RETURNING id'
+        "DELETE FROM otps WHERE expires_at < NOW() RETURNING id",
       );
 
-      logger.info('OTP', 'Cleaned up expired OTPs', {
-        count: result.rowCount
+      logger.info("OTP", "Cleaned up expired OTPs", {
+        count: result.rowCount,
       });
 
       return result.rowCount;
     } catch (error) {
-      logger.error('OTP', 'Failed to cleanup expired OTPs', {
-        error: error.message
+      logger.error("OTP", "Failed to cleanup expired OTPs", {
+        error: error.message,
       });
     }
   }
@@ -424,17 +427,17 @@ class OTPService {
   async cleanupExpiredTokens() {
     try {
       const result = await databaseService.query(
-        'DELETE FROM recovery_tokens WHERE expires_at < NOW() RETURNING id'
+        "DELETE FROM recovery_tokens WHERE expires_at < NOW() RETURNING id",
       );
 
-      logger.info('OTP', 'Cleaned up expired recovery tokens', {
-        count: result.rowCount
+      logger.info("OTP", "Cleaned up expired recovery tokens", {
+        count: result.rowCount,
       });
 
       return result.rowCount;
     } catch (error) {
-      logger.error('OTP', 'Failed to cleanup expired recovery tokens', {
-        error: error.message
+      logger.error("OTP", "Failed to cleanup expired recovery tokens", {
+        error: error.message,
       });
     }
   }

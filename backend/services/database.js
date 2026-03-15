@@ -1175,16 +1175,40 @@ class DatabaseService {
    */
   async getPanicAlerts(userId, limit = 10, offset = 0) {
     try {
+      // Get panic alerts with custom message
       const result = await this.query(
-        `SELECT id, locationData, txHash, blockNumber, createdAt
-         FROM panic_alerts
-         WHERE userid = $1
-         ORDER BY createdAt DESC
+        `SELECT pa.id, pa.locationdata, pa.txhash, pa.blocknumber, pa.createdat, u.custompanicmessage
+         FROM panic_alerts pa
+         JOIN users u ON pa.userid = u.userid
+         WHERE pa.userid = $1
+         ORDER BY pa.createdat DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset]
       );
 
-      return result.rows || [];
+      if (!result.rows || result.rows.length === 0) {
+        return [];
+      }
+
+      // For each alert, get the emergency contacts that were notified
+      const alertsWithContacts = await Promise.all(
+        result.rows.map(async (alert) => {
+          const contactsResult = await this.query(
+            `SELECT phone, name, relationship
+             FROM emergency_contacts
+             WHERE userid = $1 AND isactive = true
+             ORDER BY name ASC`,
+            [userId]
+          );
+
+          return {
+            ...alert,
+            emergencyContacts: contactsResult.rows || []
+          };
+        })
+      );
+
+      return alertsWithContacts;
     } catch (error) {
       logger.error('DATABASE', 'Failed to get panic alerts', {
         error: error.message

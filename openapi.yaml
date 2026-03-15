@@ -233,7 +233,14 @@ components:
           items:
             type: string
           description: Responses to survey questions (optional)
-          example: ["Yes", "It happened at work", "Yesterday", "For personal tracking", "No"]
+          example:
+            [
+              "Yes",
+              "It happened at work",
+              "Yesterday",
+              "For personal tracking",
+              "No",
+            ]
         metadata:
           type: object
           description: Optional metadata
@@ -253,7 +260,16 @@ components:
           example: "Report submitted successfully, waiting for blockchain confirmations"
         data:
           type: object
-          required: [reportId, txHash, ipfsHash, ipfsGatewayUrl, type, status, confirmations]
+          required:
+            [
+              reportId,
+              txHash,
+              ipfsHash,
+              ipfsGatewayUrl,
+              type,
+              status,
+              confirmations,
+            ]
           properties:
             reportId:
               type: string
@@ -506,7 +522,7 @@ components:
         alerts:
           type: array
           items:
-            $ref: '#/components/schemas/PanicAlertRecord'
+            $ref: "#/components/schemas/PanicAlertRecord"
         total:
           type: integer
 
@@ -591,7 +607,7 @@ components:
         contacts:
           type: array
           items:
-            $ref: '#/components/schemas/EmergencyContact'
+            $ref: "#/components/schemas/EmergencyContact"
 
     EditEmergencyContactRequest:
       type: object
@@ -615,7 +631,14 @@ components:
           type: string
         type:
           type: string
-          enum: [access_granted, panic_alert, report_submitted, report_updated, access_revoked]
+          enum:
+            [
+              access_granted,
+              panic_alert,
+              report_submitted,
+              report_updated,
+              access_revoked,
+            ]
         title:
           type: string
         message:
@@ -641,7 +664,7 @@ components:
         notifications:
           type: array
           items:
-            $ref: '#/components/schemas/Notification'
+            $ref: "#/components/schemas/Notification"
         total:
           type: integer
         limit:
@@ -666,7 +689,7 @@ components:
         reports:
           type: array
           items:
-            $ref: '#/components/schemas/ReportStatusResponse'
+            $ref: "#/components/schemas/ReportStatusResponse"
         total:
           type: integer
         limit:
@@ -703,27 +726,27 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignupInitiateRequest'
+              $ref: "#/components/schemas/SignupInitiateRequest"
       responses:
-        '200':
+        "200":
           description: OTP sent successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SignupInitiateResponse'
-        '400':
+                $ref: "#/components/schemas/SignupInitiateResponse"
+        "400":
           description: Invalid phone format
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '429':
+                $ref: "#/components/schemas/Error"
+        "429":
           description: Rate limited (5 attempts per 15 minutes)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '503':
+                $ref: "#/components/schemas/Error"
+        "503":
           description: Twilio SMS service unavailable
 
   /api/auth/signup/verify:
@@ -736,21 +759,21 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignupVerifyRequest'
+              $ref: "#/components/schemas/SignupVerifyRequest"
       responses:
-        '200':
+        "200":
           description: Account created, JWT returned
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SignupVerifyResponse'
-        '400':
+                $ref: "#/components/schemas/SignupVerifyResponse"
+        "400":
           description: Invalid OTP or expired
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '429':
+                $ref: "#/components/schemas/Error"
+        "429":
           description: Rate limited (5 attempts per 15 minutes)
 
   /api/auth/login/initiate:
@@ -763,21 +786,21 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LoginInitiateRequest'
+              $ref: "#/components/schemas/LoginInitiateRequest"
       responses:
-        '200':
+        "200":
           description: OTP sent
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginInitiateResponse'
-        '400':
+                $ref: "#/components/schemas/LoginInitiateResponse"
+        "400":
           description: Phone not registered
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '429':
+                $ref: "#/components/schemas/Error"
+        "429":
           description: Rate limited
 
   /api/auth/login/verify:
@@ -790,15 +813,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SignupVerifyRequest'
+              $ref: "#/components/schemas/SignupVerifyRequest"
       responses:
-        '200':
+        "200":
           description: JWT returned
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginVerifyResponse'
-        '400':
+                $ref: "#/components/schemas/LoginVerifyResponse"
+        "400":
           description: Invalid OTP or expired
 
   /api/auth/forgot-phone:
@@ -818,7 +841,7 @@ paths:
                   type: string
                   format: email
       responses:
-        '200':
+        "200":
           description: Recovery token sent to email
           content:
             application/json:
@@ -848,7 +871,7 @@ paths:
                 token:
                   type: string
       responses:
-        '200':
+        "200":
           description: Token verified
 
   /api/auth/change-phone/recovery:
@@ -871,7 +894,7 @@ paths:
                 newPhone:
                   type: string
       responses:
-        '200':
+        "200":
           description: OTP sent to new phone
 
   /api/auth/verify-phone-change/recovery:
@@ -896,7 +919,7 @@ paths:
                 otp:
                   type: string
       responses:
-        '200':
+        "200":
           description: Phone changed, JWT returned
 
   /api/auth/change-phone:
@@ -917,9 +940,9 @@ paths:
                 newPhone:
                   type: string
       responses:
-        '200':
+        "200":
           description: OTP sent to new phone
-        '401':
+        "401":
           description: Unauthorized
 
   /api/auth/verify-phone-change:
@@ -942,7 +965,7 @@ paths:
                 otp:
                   type: string
       responses:
-        '200':
+        "200":
           description: Phone changed, new JWT returned
 
   /api/auth/verify:
@@ -953,13 +976,13 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Token valid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VerifyTokenResponse'
-        '401':
+                $ref: "#/components/schemas/VerifyTokenResponse"
+        "401":
           description: Token invalid or expired
 
   /api/auth/setup-email:
@@ -974,15 +997,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetupEmailRequest'
+              $ref: "#/components/schemas/SetupEmailRequest"
       responses:
-        '200':
+        "200":
           description: Email configured
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SetupEmailResponse'
-        '400':
+                $ref: "#/components/schemas/SetupEmailResponse"
+        "400":
           description: Invalid email
 
   /api/auth/set-pin:
@@ -997,15 +1020,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetPinRequest'
+              $ref: "#/components/schemas/SetPinRequest"
       responses:
-        '200':
+        "200":
           description: PIN set
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SetPinResponse'
-        '400':
+                $ref: "#/components/schemas/SetPinResponse"
+        "400":
           description: Invalid PIN format
 
   /api/auth/get-pin:
@@ -1016,12 +1039,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Current PIN returned
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GetPinResponse'
+                $ref: "#/components/schemas/GetPinResponse"
 
   /api/auth/delete-account:
     post:
@@ -1031,7 +1054,7 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Account deleted
           content:
             application/json:
@@ -1051,7 +1074,7 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Logged out
 
   # ========== REPORT ENDPOINTS ==========
@@ -1068,19 +1091,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitReportRequest'
+              $ref: "#/components/schemas/SubmitReportRequest"
       responses:
-        '200':
+        "200":
           description: Report submitted (pending blockchain confirmation)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitReportResponse'
-        '400':
+                $ref: "#/components/schemas/SubmitReportResponse"
+        "400":
           description: Invalid payload
-        '401':
+        "401":
           description: Unauthorized
-        '503':
+        "503":
           description: IPFS or blockchain service unavailable
 
   /api/reportStatus:
@@ -1097,13 +1120,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Report status
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReportStatusResponse'
-        '404':
+                $ref: "#/components/schemas/ReportStatusResponse"
+        "404":
           description: Report not found
 
   /api/report/{reportId}/decrypt:
@@ -1120,15 +1143,15 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Decrypted report
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DecryptedReportResponse'
-        '403':
+                $ref: "#/components/schemas/DecryptedReportResponse"
+        "403":
           description: Access denied
-        '404':
+        "404":
           description: Report not found
 
   /api/report/{reportId}/archive:
@@ -1145,9 +1168,9 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Report archived
-        '404':
+        "404":
           description: Report not found
 
   /api/report/{reportId}/unarchive:
@@ -1164,7 +1187,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Report unarchived
 
   /api/health:
@@ -1173,12 +1196,12 @@ paths:
       operationId: healthCheck
       tags: [Reports]
       responses:
-        '200':
+        "200":
           description: System status
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthCheckResponse'
+                $ref: "#/components/schemas/HealthCheckResponse"
 
   # ========== ACCESS CONTROL ENDPOINTS ==========
 
@@ -1194,15 +1217,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/GrantAccessRequest'
+              $ref: "#/components/schemas/GrantAccessRequest"
       responses:
-        '200':
+        "200":
           description: Access granted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GrantAccessResponse'
-        '403':
+                $ref: "#/components/schemas/GrantAccessResponse"
+        "403":
           description: Not report owner
 
   /api/access/revoke:
@@ -1217,9 +1240,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RevokeAccessRequest'
+              $ref: "#/components/schemas/RevokeAccessRequest"
       responses:
-        '200':
+        "200":
           description: Access revoked
 
   /api/access/shared-with-me:
@@ -1241,7 +1264,7 @@ paths:
             type: integer
             default: 0
       responses:
-        '200':
+        "200":
           description: Shared reports list
           content:
             application/json:
@@ -1251,7 +1274,7 @@ paths:
                   reports:
                     type: array
                     items:
-                      $ref: '#/components/schemas/SharedReportSummary'
+                      $ref: "#/components/schemas/SharedReportSummary"
                   total:
                     type: integer
 
@@ -1263,7 +1286,7 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: My shared reports
 
   /api/access/my-report/{reportId}/viewers:
@@ -1280,12 +1303,12 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Viewers list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReportViewersResponse'
+                $ref: "#/components/schemas/ReportViewersResponse"
 
   /api/access/report/{reportId}:
     get:
@@ -1301,13 +1324,13 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Report data
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DecryptedReportResponse'
-        '403':
+                $ref: "#/components/schemas/DecryptedReportResponse"
+        "403":
           description: Access denied
 
   # ========== PANIC ALERT ENDPOINTS ==========
@@ -1329,15 +1352,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SendPanicAlertRequest'
+              $ref: "#/components/schemas/SendPanicAlertRequest"
       responses:
-        '200':
+        "200":
           description: Panic alert sent (background processing continues)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendPanicAlertResponse'
-        '429':
+                $ref: "#/components/schemas/SendPanicAlertResponse"
+        "429":
           description: Rate limited (10 attempts per minute)
 
   /api/panic-alert/history:
@@ -1359,12 +1382,12 @@ paths:
             type: integer
             default: 0
       responses:
-        '200':
+        "200":
           description: Panic alert history
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PanicHistoryResponse'
+                $ref: "#/components/schemas/PanicHistoryResponse"
 
   # ========== EMERGENCY CONTACT ENDPOINTS ==========
 
@@ -1380,14 +1403,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetPanicMessageRequest'
+              $ref: "#/components/schemas/SetPanicMessageRequest"
       responses:
-        '200':
+        "200":
           description: Message set
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SetPanicMessageResponse'
+                $ref: "#/components/schemas/SetPanicMessageResponse"
 
   /api/emergency/panic-message:
     get:
@@ -1397,12 +1420,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Current message
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PanicMessageResponse'
+                $ref: "#/components/schemas/PanicMessageResponse"
 
   /api/emergency/add-contact:
     post:
@@ -1416,9 +1439,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddEmergencyContactRequest'
+              $ref: "#/components/schemas/AddEmergencyContactRequest"
       responses:
-        '200':
+        "200":
           description: Contact added
           content:
             application/json:
@@ -1438,12 +1461,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Emergency contacts list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EmergencyContactsResponse'
+                $ref: "#/components/schemas/EmergencyContactsResponse"
 
   /api/emergency/edit-contact/{contactId}:
     put:
@@ -1463,9 +1486,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EditEmergencyContactRequest'
+              $ref: "#/components/schemas/EditEmergencyContactRequest"
       responses:
-        '200':
+        "200":
           description: Contact updated
 
   /api/emergency/remove-contact/{contactId}:
@@ -1482,7 +1505,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Contact removed
 
   # ========== NOTIFICATION ENDPOINTS ==========
@@ -1514,12 +1537,12 @@ paths:
             type: integer
             default: 0
       responses:
-        '200':
+        "200":
           description: Notifications list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationsResponse'
+                $ref: "#/components/schemas/NotificationsResponse"
 
   /api/notifications/unread/count:
     get:
@@ -1529,12 +1552,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Unread count
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UnreadCountResponse'
+                $ref: "#/components/schemas/UnreadCountResponse"
 
   /api/notifications/{notificationId}/read:
     post:
@@ -1550,7 +1573,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Marked as read
 
   /api/notifications/mark-all-read:
@@ -1561,7 +1584,7 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: All marked as read
 
   /api/notifications/{notificationId}:
@@ -1578,7 +1601,7 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Notification deleted
 
   # ========== SEARCH ENDPOINTS ==========
@@ -1617,12 +1640,12 @@ paths:
             type: integer
             default: 0
       responses:
-        '200':
+        "200":
           description: Search results
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchReportsResponse'
+                $ref: "#/components/schemas/SearchReportsResponse"
 
   /api/search/stats:
     get:
@@ -1632,9 +1655,9 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: Report statistics
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReportStatsResponse'
+                $ref: "#/components/schemas/ReportStatsResponse"
