@@ -114,6 +114,7 @@ class SearchController {
             gasUsed: r.gasUsed,
             createdAt: r.createdAt,
             submittedAt: r.submittedAt,
+            isArchived: r.isArchived || r.isarchived || false,
             metadata: r.metadata
           })),
           pagination: {

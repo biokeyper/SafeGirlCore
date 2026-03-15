@@ -212,6 +212,7 @@ class ReportController {
         gasUsed: blockchainResult.gasUsed,
         timestamp: new Date().toISOString(),
         dbId: dbRecord?.id,
+        isArchived: false,
       };
 
       const successResponse = {

@@ -232,6 +232,7 @@ class AccessController {
             createdAt: report.createdAt,
             status: report.status,
             viewerCount: report.viewerCount,
+            isArchived: submission.isarchived || submission.isArchived || false,
             responses: submission.responses,
             metadata: submission.metadata,
             viewers: report.viewers.map(viewer => ({
@@ -308,6 +309,7 @@ class AccessController {
             isActive: access.isactive || access.isActive,
             status: submission.status,
             createdAt: submission.createdat,
+            isArchived: submission.isarchived || submission.isArchived || false,
             responses: submission.responses,
             metadata: submission.metadata
           });
@@ -472,6 +474,7 @@ class AccessController {
           status: report.status,
           txHash: report.txhash || report.txHash,
           ipfsHash: report.ipfshash || report.ipfsHash,
+          isArchived: report.isarchived || report.isArchived || false,
           responses: report.responses,
           metadata: report.metadata,
           createdAt: report.createdat || report.createdAt,

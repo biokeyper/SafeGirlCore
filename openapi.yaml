@@ -11,7 +11,6 @@ info:
     - IPFS + Polygon blockchain for immutable report records
     - Non-blocking panic alerts with SMS notifications
     - Report access control and sharing
-    - Key recovery with PIN backup
   version: 1.0.0
   contact:
     name: SafeGirl Team
@@ -244,27 +243,61 @@ components:
 
     SubmitReportResponse:
       type: object
-      required: [success, reportId, status]
+      required: [success, message, data]
       properties:
         success:
           type: boolean
           example: true
-        reportId:
+        message:
           type: string
-          description: Unique report identifier
-          example: "550e8400-e29b-41d4-a716-446655440000"
-        status:
-          type: string
-          enum: [pending, confirmed, failed]
-          example: "pending"
-        ipfsHash:
-          type: string
-          nullable: true
-          description: IPFS hash once confirmed
-        txHash:
-          type: string
-          nullable: true
-          description: Blockchain transaction hash once confirmed
+          example: "Report submitted successfully, waiting for blockchain confirmations"
+        data:
+          type: object
+          required: [reportId, txHash, ipfsHash, ipfsGatewayUrl, type, status, confirmations]
+          properties:
+            reportId:
+              type: string
+              format: uuid
+              example: "550e8400-e29b-41d4-a716-446655440000"
+            txHash:
+              type: string
+              description: Blockchain transaction hash
+            ipfsHash:
+              type: string
+              description: IPFS CID of encrypted report
+            ipfsGatewayUrl:
+              type: string
+              description: Pinata gateway URL for the report
+            audioIpfsHash:
+              type: string
+              nullable: true
+              description: IPFS CID of audio file (if provided)
+            audioGatewayUrl:
+              type: string
+              nullable: true
+            type:
+              type: string
+              enum: [text, audio]
+              example: "text"
+            status:
+              type: string
+              enum: [pending, confirmed, failed]
+              example: "pending"
+            confirmations:
+              type: integer
+              example: 0
+            blockNumber:
+              type: integer
+              nullable: true
+            gasUsed:
+              type: string
+              nullable: true
+            timestamp:
+              type: string
+              format: date-time
+            dbId:
+              type: string
+              nullable: true
 
     ReportStatusResponse:
       type: object
@@ -623,65 +656,6 @@ components:
         unreadCount:
           type: integer
           example: 3
-
-    # ========== KEY RECOVERY SCHEMAS ==========
-
-    BackupKeyRequest:
-      type: object
-      required: [encryptedKey, keyIv, keyAuthTag, pinHash]
-      properties:
-        encryptedKey:
-          type: string
-          description: Backup key encrypted with PIN (hex)
-        keyIv:
-          type: string
-          description: IV for encryption (hex)
-        keyAuthTag:
-          type: string
-          description: Auth tag for encryption (hex)
-        pinHash:
-          type: string
-          description: SHA-256 hash of PIN
-
-    BackupKeyResponse:
-      type: object
-      required: [success, message]
-      properties:
-        success:
-          type: boolean
-          example: true
-        message:
-          type: string
-          example: "Key backup created"
-
-    RecoverKeyRequest:
-      type: object
-      required: [phone, pinHash]
-      properties:
-        phone:
-          type: string
-          description: User's phone number
-          example: "0750902921"
-        pinHash:
-          type: string
-          description: SHA-256 hash of PIN
-
-    RecoverKeyResponse:
-      type: object
-      required: [success, encryptedKey, keyIv, keyAuthTag]
-      properties:
-        success:
-          type: boolean
-          example: true
-        encryptedKey:
-          type: string
-          description: Encrypted key (hex)
-        keyIv:
-          type: string
-          description: IV (hex)
-        keyAuthTag:
-          type: string
-          description: Auth tag (hex)
 
     # ========== SEARCH SCHEMAS ==========
 
@@ -1606,28 +1580,6 @@ paths:
       responses:
         '200':
           description: Notification deleted
-
-    post:
-      summary: Recover encryption key using PIN and phone
-      operationId: recoverKeyWithPin
-      tags: [Key Recovery]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RecoverKeyRequest'
-      responses:
-        '200':
-          description: Key recovered
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RecoverKeyResponse'
-        '400':
-          description: Invalid PIN
-        '429':
-          description: Rate limited (5 attempts per 15 minutes)
 
   # ========== SEARCH ENDPOINTS ==========
 

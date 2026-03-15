@@ -329,8 +329,15 @@ class AuthController {
       );
 
       // Build recovery deep link for mobile app
-      const appScheme = process.env.APP_SCHEME || 'safegirl';
+      const appScheme = process.env.APP_SCHEME || 'safegirlapp';
       const recoveryLink = `${appScheme}://recovery/${tokenResult.token}`;
+
+      // Log the link so it can be inspected in server logs during testing
+      logger.info('AUTH', 'Recovery link generated', {
+        userId: user.userid,
+        email,
+        link: recoveryLink
+      });
 
       // Send recovery email
       const emailSent = await emailService.sendRecoveryEmail(email, recoveryLink);
@@ -340,7 +347,6 @@ class AuthController {
           userId: user.userid,
           email
         });
-        // Still return success, user can use token from dev logs
       }
 
       logger.success('AUTH', 'Recovery token generated and email sent', {
@@ -575,7 +581,7 @@ class AuthController {
   async initiatePhoneChange(req, res, next) {
     try {
       const { newPhone } = req.body;
-      const userId = req.user.userid;
+      const userId = req.user.userId;
 
       logger.logRequest('POST', '/api/auth/change-phone', { newPhone, userId });
 
@@ -629,7 +635,7 @@ class AuthController {
   async verifyPhoneChange(req, res, next) {
     try {
       const { newPhone, otp } = req.body;
-      const userId = req.user.userid;
+      const userId = req.user.userId;
 
       logger.logRequest('POST', '/api/auth/verify-phone-change', { newPhone, userId });
 
@@ -710,7 +716,7 @@ class AuthController {
         success: true,
         message: 'Token is valid',
         data: {
-          userId: req.user.userid,
+          userId: req.user.userId,
           phone: req.user.phone,
           email: req.user.email
         }
@@ -728,7 +734,7 @@ class AuthController {
   async setupRecoveryEmail(req, res, next) {
     try {
       const { email } = req.body;
-      const userId = req.user.userid;
+      const userId = req.user.userId;
 
       logger.logRequest('POST', '/api/auth/setup-email', { userId });
 
@@ -801,7 +807,7 @@ class AuthController {
   async setPin(req, res, next) {
     try {
       const { pin } = req.body;
-      const userId = req.user.userid;
+      const userId = req.user.userId;
 
       logger.logRequest('POST', '/api/auth/set-pin', { userId });
 
@@ -835,7 +841,7 @@ class AuthController {
    */
   async getPin(req, res, next) {
     try {
-      const userId = req.user.userid;
+      const userId = req.user.userId;
 
       logger.logRequest('GET', '/api/auth/get-pin', { userId });
 

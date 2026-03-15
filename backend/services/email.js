@@ -75,17 +75,25 @@ class EmailService {
       }
 
       const subject = 'SafeGirl - Account Recovery';
+      const recoveryToken = recoveryLink.split('/').pop();
       const htmlContent = `
         <h2>SafeGirl Account Recovery</h2>
         <p>We received a request to recover your SafeGirl account.</p>
+
+        <p><strong>Important:</strong> This link is an app deep link. It works best on a phone where the SafeGirl app is installed.</p>
 
         <p><strong>Your recovery link:</strong></p>
         <p><a href="${recoveryLink}" style="display: inline-block; background-color: #7c3aed; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
           Click here to recover your account
         </a></p>
 
-        <p>Or click here if the button above doesn't work:</p>
+        <p>If the button does not open the app, copy this full link and open it on your phone:</p>
         <p><a href="${recoveryLink}" style="color: #7c3aed; text-decoration: underline; font-weight: bold;">${recoveryLink}</a></p>
+
+        <p>Fallback token (enter manually in app recovery if needed):</p>
+        <p style="font-family: monospace; background: #f3f4f6; padding: 8px 12px; border-radius: 4px; display: inline-block;">
+          ${recoveryToken}
+        </p>
 
         <p><strong>⏱️ This link expires in 24 hours.</strong></p>
 
@@ -99,7 +107,11 @@ SafeGirl Account Recovery
 
 We received a request to recover your SafeGirl account.
 
+Important: this is an app deep link and works best on a phone with SafeGirl installed.
+
 Your recovery link: ${recoveryLink}
+
+Fallback token (if the link does not open): ${recoveryToken}
 
 This link expires in 24 hours.
 
@@ -279,9 +291,18 @@ Your privacy and safety are our top priority.
       const appScheme = process.env.APP_SCHEME || 'safegirlapp';
       const verificationLink = `${appScheme}://verify-email/${encodeURIComponent(recipientEmail)}/${userId}`;
 
+      // Log the link so it can be inspected in server logs during testing
+      logger.info('EMAIL', 'Verification link generated', {
+        to: recipientEmail,
+        userId,
+        link: verificationLink
+      });
+
       const htmlContent = `
         <h2>Verify Your Email Address</h2>
         <p>Thank you for adding an email address to your SafeGirl account!</p>
+
+        <p><strong>Important:</strong> This is an app deep link and may not open from desktop email clients.</p>
 
         <p>Click the button below to verify your email address (opens SafeGirl app):</p>
         <p>
@@ -290,7 +311,7 @@ Your privacy and safety are our top priority.
           </a>
         </p>
 
-        <p>Or copy and paste this link:</p>
+        <p>If the button does not work, copy this link and open it on your phone:</p>
         <p>${verificationLink}</p>
 
         <p><strong>⏱️ This link expires in 24 hours.</strong></p>
@@ -307,7 +328,9 @@ Verify Your Email Address
 
 Thank you for adding an email address to your SafeGirl account!
 
-Click the link below to verify your email address:
+Important: this is an app deep link and may not open from desktop email clients.
+
+Open this link on your phone to verify your email address:
 ${verificationLink}
 
 This link expires in 24 hours.
