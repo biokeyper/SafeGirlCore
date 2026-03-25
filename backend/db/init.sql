@@ -155,7 +155,8 @@ CREATE INDEX idx_alerts_detected ON tampering_alerts(detectedAt DESC);
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   userId VARCHAR(255) UNIQUE NOT NULL,        -- Unique user identifier (UUID)
-  phone VARCHAR(20) UNIQUE NOT NULL,          -- User's phone number (primary auth)
+  phone VARCHAR(20) UNIQUE NOT NULL,          -- User's phone number (primary auth, E.164 format)
+  country VARCHAR(2),                         -- Country code (e.g., UG, US, KE) - ISO 3166-1 alpha-2
   email VARCHAR(255) UNIQUE,                  -- User's email (recovery method)
   phone_verified BOOLEAN DEFAULT FALSE,       -- Phone verification status
   email_verified BOOLEAN DEFAULT FALSE,       -- Email verification status
@@ -170,6 +171,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX idx_users_userId ON users(userId);
 CREATE INDEX idx_users_phone ON users(phone);
 CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_country ON users(country);
 
 -- ========== EMERGENCY CONTACTS TABLE ==========
 -- Stores emergency contacts for panic alerts

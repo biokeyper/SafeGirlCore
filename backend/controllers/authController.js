@@ -26,16 +26,16 @@ class AuthController {
    */
   async initiateSignup(req, res, next) {
     try {
-      const { phone } = req.body;
+      const { phone, country } = req.body;
 
-      logger.logRequest("POST", "/api/auth/signup/initiate", { phone });
+      logger.logRequest("POST", "/api/auth/signup/initiate", { phone, country });
 
-      // Validate phone
-      if (!phone) {
-        logger.warn("AUTH", "Missing phone in signup", { phone: !!phone });
+      // Validate phone and country
+      if (!phone || !country) {
+        logger.warn("AUTH", "Missing phone or country in signup", { phone: !!phone, country: !!country });
         return res.status(400).json({
           error: true,
-          message: "phone is required",
+          message: "phone and country are required",
         });
       }
 
@@ -83,18 +83,19 @@ class AuthController {
    */
   async verifySignup(req, res, next) {
     try {
-      const { phone, otp } = req.body;
+      const { phone, otp, country } = req.body;
 
-      logger.logRequest("POST", "/api/auth/signup/verify", { phone });
+      logger.logRequest("POST", "/api/auth/signup/verify", { phone, country });
 
-      if (!phone || !otp) {
+      if (!phone || !otp || !country) {
         logger.warn("AUTH", "Missing fields in signup verification", {
           phone: !!phone,
           otp: !!otp,
+          country: !!country,
         });
         return res.status(400).json({
           error: true,
-          message: "phone and otp are required",
+          message: "phone, otp, and country are required",
         });
       }
 
@@ -115,10 +116,10 @@ class AuthController {
 
       // Create user in database (email is NULL initially)
       const result = await databaseService.query(
-        `INSERT INTO users (userId, phone, email, phone_verified, email_verified, pin, createdAt)
-         VALUES ($1, $2, NULL, true, false, NULL, NOW())
-         RETURNING userid, phone, email, pin, createdAt`,
-        [userId, phone],
+        `INSERT INTO users (userId, phone, country, email, phone_verified, email_verified, pin, createdAt)
+         VALUES ($1, $2, $3, NULL, true, false, NULL, NOW())
+         RETURNING userid, phone, country, email, pin, createdAt`,
+        [userId, phone, country],
       );
 
       if (!result.rows || result.rows.length === 0) {
@@ -129,7 +130,7 @@ class AuthController {
 
       // Generate JWT token
       const token = jwt.sign(
-        { userId: user.userid, phone: user.phone, email: user.email || null },
+        { userId: user.userid, phone: user.phone, email: user.email || null, country: user.country },
         getJwtSecretOrThrow(),
         { expiresIn: "7d" },
       );
@@ -145,6 +146,7 @@ class AuthController {
         data: {
           userId: user.userid,
           phone: user.phone,
+          country: user.country,
           email: user.email,
           pin: user.pin || null,
           token,
@@ -249,7 +251,7 @@ class AuthController {
 
       // Get user info
       const userResult = await databaseService.query(
-        "SELECT userId, email, phone, pin FROM users WHERE phone = $1",
+        "SELECT userId, email, phone, country, pin FROM users WHERE phone = $1",
         [phone],
       );
 
@@ -267,7 +269,7 @@ class AuthController {
 
       // Generate JWT token
       const token = jwt.sign(
-        { userId: user.userid, phone: user.phone, email: user.email },
+        { userId: user.userid, phone: user.phone, email: user.email, country: user.country },
         getJwtSecretOrThrow(),
         { expiresIn: "7d" },
       );
@@ -282,6 +284,7 @@ class AuthController {
         data: {
           userId: user.userid,
           phone: user.phone,
+          country: user.country,
           email: user.email,
           pin: user.pin || null,
           token,
