@@ -1,9 +1,9 @@
 {
-  "watch": [".", "routes", "controllers", "services", "middleware", "utils", "config"],
-  "ignore": ["node_modules", "logs", "*.log", "db/migrations"],
-  "ext": "js,json",
-  "exec": "node",
-  "script": "server.js",
+  "watch": [".", "routes", "controllers", "services", "middleware", "utils", "config", "types"],
+  "ignore": ["node_modules", "logs", "*.log", "db/migrations", "dist"],
+  "ext": "ts,json",
+  "exec": "tsx",
+  "script": "server.ts",
   "delay": 500,
   "verbose": true,
   "env": {
