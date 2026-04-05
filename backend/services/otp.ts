@@ -63,11 +63,42 @@ class OTPService {
   private OTP_LENGTH: number;
   private OTP_EXPIRY_MINUTES: number;
   private MAX_ATTEMPTS: number;
+  private MAX_FAILED_OTP_ATTEMPTS: number;
+  private LOCKOUT_DURATION_MS: number;
 
   constructor() {
     this.OTP_LENGTH = 6;
     this.OTP_EXPIRY_MINUTES = 5;
-    this.MAX_ATTEMPTS = 3;
+    this.MAX_ATTEMPTS = 3; // Max attempts per OTP code
+    this.MAX_FAILED_OTP_ATTEMPTS = 3; // Max failed attempts before account lockout
+    this.LOCKOUT_DURATION_MS = 60 * 60 * 1000; // Default (not used, escalating instead)
+  }
+
+  /**
+   * Get escalating lockout duration based on number of previous lockouts
+   * 1st lockout: 5 minutes
+   * 2nd lockout: 10 minutes
+   * 3rd lockout: 1 hour
+   * 4th+ lockout: 2 hours
+   * @private
+   */
+  private getEscalatingLockoutDuration(lockoutCount: number): number {
+    const durations = [
+      5 * 60 * 1000,      // 5 minutes
+      10 * 60 * 1000,     // 10 minutes
+      60 * 60 * 1000,     // 1 hour
+      2 * 60 * 60 * 1000, // 2 hours
+    ];
+
+    // Cap at 2 hours (index 3)
+    const durationMs = durations[Math.min(lockoutCount, 3)];
+
+    logger.debug("OTP", "Escalating lockout duration", {
+      lockoutCount,
+      durationMinutes: durationMs / (60 * 1000),
+    });
+
+    return durationMs;
   }
 
   /**
@@ -106,6 +137,129 @@ class OTPService {
     });
 
     return normalized;
+  }
+
+  /**
+   * Check if account is locked due to too many failed OTP attempts
+   * @private
+   */
+  private async isAccountLocked(phone: string): Promise<{ locked: boolean; unlocksAt?: Date }> {
+    try {
+      const result = await databaseService.query(
+        "SELECT otp_lockout_until FROM users WHERE phone = $1",
+        [phone]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        return { locked: false };
+      }
+
+      const lockoutUntil = result.rows[0].otp_lockout_until;
+
+      // Check if lockout has expired
+      if (lockoutUntil && new Date(lockoutUntil) > new Date()) {
+        return {
+          locked: true,
+          unlocksAt: new Date(lockoutUntil),
+        };
+      }
+
+      return { locked: false };
+    } catch (error) {
+      logger.error("OTP", "Failed to check account lockout", {
+        error: error instanceof Error ? error.message : String(error),
+        phone,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Increment failed OTP attempts and lock account if threshold reached
+   * Uses escalating lockout durations: 5min → 10min → 1hr → 2hrs
+   * @private
+   */
+  private async incrementFailedAttempts(phone: string): Promise<void> {
+    try {
+      const result = await databaseService.query(
+        "SELECT otp_failed_attempts, otp_lockout_count FROM users WHERE phone = $1",
+        [phone]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        return; // User doesn't exist yet (signup flow)
+      }
+
+      const currentAttempts = result.rows[0].otp_failed_attempts || 0;
+      const currentLockoutCount = result.rows[0].otp_lockout_count || 0;
+      const newAttempts = currentAttempts + 1;
+
+      if (newAttempts >= this.MAX_FAILED_OTP_ATTEMPTS) {
+        // Lock the account with escalating duration
+        const escalatedLockoutDurationMs = this.getEscalatingLockoutDuration(
+          currentLockoutCount
+        );
+        const lockoutUntil = new Date(Date.now() + escalatedLockoutDurationMs);
+        const newLockoutCount = currentLockoutCount + 1;
+
+        await databaseService.query(
+          `UPDATE users
+           SET otp_failed_attempts = $1,
+               otp_lockout_until = $2,
+               otp_lockout_count = $3
+           WHERE phone = $4`,
+          [newAttempts, lockoutUntil, newLockoutCount, phone]
+        );
+
+        const lockoutMinutes = Math.round(escalatedLockoutDurationMs / (60 * 1000));
+
+        logger.warn("OTP", "Account locked due to too many failed OTP attempts", {
+          phone,
+          attempts: newAttempts,
+          lockoutNumber: newLockoutCount,
+          lockoutMinutes,
+          unlocksAt: lockoutUntil,
+        });
+      } else {
+        // Just increment the counter
+        await databaseService.query(
+          "UPDATE users SET otp_failed_attempts = $1 WHERE phone = $2",
+          [newAttempts, phone]
+        );
+      }
+    } catch (error) {
+      logger.error("OTP", "Failed to increment failed attempts", {
+        error: error instanceof Error ? error.message : String(error),
+        phone,
+      });
+      // Don't throw - don't block OTP verification if lockout tracking fails
+    }
+  }
+
+  /**
+   * Reset failed OTP attempts after successful verification
+   * Also resets escalating lockout count so next lockout starts fresh
+   * @private
+   */
+  private async resetFailedAttempts(phone: string): Promise<void> {
+    try {
+      await databaseService.query(
+        `UPDATE users
+         SET otp_failed_attempts = 0,
+             otp_lockout_until = NULL,
+             otp_lockout_count = 0
+         WHERE phone = $1`,
+        [phone]
+      );
+
+      logger.info("OTP", "Failed OTP attempts and lockout count reset", { phone });
+    } catch (error) {
+      logger.error("OTP", "Failed to reset failed attempts", {
+        error: error instanceof Error ? error.message : String(error),
+        phone,
+      });
+      // Don't throw - don't block OTP verification if reset fails
+    }
   }
 
   /**
@@ -240,6 +394,21 @@ class OTPService {
     try {
       logger.info("OTP", `Verifying ${otpType} OTP for ${phone}`);
 
+      // Check if account is locked
+      const lockoutStatus = await this.isAccountLocked(phone);
+      if (lockoutStatus.locked) {
+        logger.warn("OTP", "Account is locked due to too many failed attempts", {
+          phone,
+          unlocksAt: lockoutStatus.unlocksAt,
+        });
+
+        return {
+          success: false,
+          message: `Account locked. Try again in 1 hour.`,
+          code: "ACCOUNT_LOCKED",
+        };
+      }
+
       // Find valid OTP
       const result = await databaseService.query(
         `SELECT id, userid, otp_code, attempts, max_attempts, is_used, expires_at
@@ -267,7 +436,7 @@ class OTPService {
 
       // Check if OTP code matches
       if (otp.otp_code !== otpCode) {
-        // Increment attempts
+        // Increment OTP-level attempts (per code)
         const newAttempts = otp.attempts + 1;
 
         if (newAttempts >= otp.max_attempts) {
@@ -282,6 +451,9 @@ class OTPService {
             attempts: newAttempts,
           });
 
+          // Also increment account-level failed attempts
+          await this.incrementFailedAttempts(phone);
+
           return {
             success: false,
             message: "Too many failed attempts. Please request a new OTP.",
@@ -290,11 +462,14 @@ class OTPService {
           };
         }
 
-        // Update attempts
+        // Update OTP-level attempts
         await databaseService.query(
           "UPDATE otps SET attempts = $1 WHERE id = $2",
           [newAttempts, otp.id]
         );
+
+        // Also increment account-level failed attempts
+        await this.incrementFailedAttempts(phone);
 
         logger.warn("OTP", `Invalid OTP code for ${otpType}`, {
           phone,
@@ -315,6 +490,9 @@ class OTPService {
         "UPDATE otps SET is_used = true, verified_at = NOW() WHERE id = $1",
         [otp.id]
       );
+
+      // Reset failed attempts on successful verification
+      await this.resetFailedAttempts(phone);
 
       logger.success("OTP", `OTP verified successfully for ${otpType}`, {
         phone,

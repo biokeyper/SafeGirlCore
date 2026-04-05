@@ -172,8 +172,14 @@ class DatabaseService {
   }
 
   /**
-   * Initialize database connection
+   * Initialize database connection with connection pooling
    * Must be called before using database methods
+   *
+   * Pool Configuration:
+   * - max: 20 connections (default: 10, suitable for most load)
+   * - idleTimeoutMillis: 30s (close idle connections)
+   * - connectionTimeoutMillis: 5s (fail fast on connection issues)
+   * - statement_timeout: 30s (prevent long-running queries)
    */
   async initialize(): Promise<boolean> {
     try {
@@ -187,11 +193,33 @@ class DatabaseService {
       // Import pg dynamically (only if DATABASE_URL is set)
       const { Pool } = pg;
 
+      // Determine pool size based on environment
+      const isProduction = process.env.NODE_ENV === 'production';
+      const maxConnections = isProduction ? 20 : 10;
+
       this.pool = new Pool({
         connectionString: databaseUrl,
-        max: 10, // Max connections in pool
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        max: maxConnections, // Max concurrent connections
+        idleTimeoutMillis: 30000, // Close idle connections after 30s
+        connectionTimeoutMillis: 5000, // Fail fast (5s timeout on new connections)
+      });
+
+      // Set statement timeout (prevents slow queries)
+      // This will be applied to all queries via the query method
+      const statementTimeout = process.env.DB_STATEMENT_TIMEOUT || '30000'; // 30s default
+
+      // Log pool events for monitoring
+      this.pool.on('error', (err) => {
+        logger.error('DATABASE', 'Unexpected error on idle client', {
+          error: err.message
+        });
+      });
+
+      this.pool.on('connect', () => {
+        logger.debug('DATABASE', 'New connection established', {
+          poolSize: this.pool?.totalCount || 0,
+          idleCount: this.pool?.idleCount || 0
+        });
       });
 
       // Test connection
@@ -200,8 +228,12 @@ class DatabaseService {
       client.release();
 
       this.isConnected = true;
-      logger.success('DATABASE', 'Connected to PostgreSQL', {
-        url: databaseUrl.split('@')[1] // Log only the host part, hide password
+      logger.success('DATABASE', 'Connected to PostgreSQL with connection pooling', {
+        url: databaseUrl.split('@')[1], // Log only the host part, hide password
+        maxConnections,
+        statementTimeout,
+        idleTimeout: '30s',
+        connectionTimeout: '5s'
       });
 
       return true;
@@ -1631,13 +1663,436 @@ class DatabaseService {
         throw new Error('Database not initialized');
       }
 
-      const result = await this.pool!.query(sql, params);
+      // Set statement timeout for this query (prevents long-running queries)
+      const statementTimeout = process.env.DB_STATEMENT_TIMEOUT || '30000'; // milliseconds
+      const queryWithTimeout = `SET statement_timeout = ${statementTimeout}; ${sql}`;
+
+      const result = await this.pool!.query(queryWithTimeout, params);
       return result;
     } catch (error) {
-      logger.error('DATABASE', 'Query execution failed', {
+      // Check if error is due to statement timeout
+      if ((error as any)?.message?.includes('statement timeout')) {
+        logger.warn('DATABASE', 'Query execution timeout', {
+          sql: sql.substring(0, 100), // Log first 100 chars only
+          error: (error as Error).message
+        });
+      } else {
+        logger.error('DATABASE', 'Query execution failed', {
+          sql: sql.substring(0, 100),
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get pool statistics for monitoring
+   * Returns information about connection pool usage
+   */
+  getPoolStats() {
+    if (!this.pool) {
+      return { status: 'uninitialized' };
+    }
+
+    return {
+      status: 'healthy',
+      totalConnections: this.pool.totalCount || 0,
+      idleConnections: this.pool.idleCount || 0,
+      waitingRequests: (this.pool as any)?.waitingCount || 0,
+      maxConnections: (this.pool as any)?._config?.max || 10
+    };
+  }
+
+  /**
+   * Check if database is healthy (for health checks)
+   */
+  async ping(): Promise<boolean> {
+    try {
+      if (!this.isConnected) {
+        return false;
+      }
+
+      const result = await this.query('SELECT 1');
+      return result.rows && result.rows.length > 0;
+    } catch (error) {
+      logger.warn('DATABASE', 'Health check failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Save SMS to retry queue (called when SMS send fails)
+   * @param alertId - Reference to panic alert
+   * @param userId - User who triggered panic
+   * @param recipientPhone - Destination phone number
+   * @param message - SMS message body
+   * @returns SMS queue record
+   */
+  async saveSmsToQueue(alertId: string, userId: string, recipientPhone: string, message: string): Promise<any> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `INSERT INTO sms_queue (alert_id, user_id, recipient_phone, message, status, retry_count, max_retries, next_retry_at)
+         VALUES ($1, $2, $3, $4, 'pending', 0, 3, CURRENT_TIMESTAMP)
+         RETURNING id, alert_id, user_id, recipient_phone, status, retry_count, next_retry_at, created_at`,
+        [alertId, userId, recipientPhone, message]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('Failed to save SMS to queue');
+      }
+
+      logger.info('DATABASE', 'SMS queued for retry', {
+        alertId,
+        userId,
+        phone: recipientPhone,
+        queueId: result.rows[0].id
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to save SMS to queue', {
+        alertId,
+        userId,
         error: error instanceof Error ? error.message : String(error)
       });
       throw error;
+    }
+  }
+
+  /**
+   * Get all pending SMS from queue that are ready to retry
+   * @param limit - Max number of SMS to fetch (default 50)
+   * @returns Array of pending SMS records
+   */
+  async getPendingSmsQueue(limit: number = 50): Promise<any[]> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `SELECT id, alert_id, user_id, recipient_phone, message, status, retry_count, max_retries,
+                last_error, next_retry_at, created_at
+         FROM sms_queue
+         WHERE status = 'pending' AND next_retry_at <= CURRENT_TIMESTAMP
+         ORDER BY next_retry_at ASC
+         LIMIT $1`,
+        [limit]
+      );
+
+      logger.debug('DATABASE', 'Fetched pending SMS from queue', {
+        count: result.rows ? result.rows.length : 0
+      });
+
+      return result.rows || [];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get pending SMS queue', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Update SMS queue entry after retry attempt
+   * @param queueId - SMS queue record ID
+   * @param updateData - {success, lastError, retryCount, nextRetryAt}
+   * @returns Updated SMS record
+   */
+  async updateSmsQueueStatus(queueId: string, updateData: any): Promise<any> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const { success, lastError, retryCount, nextRetryAt } = updateData;
+
+      let query = 'UPDATE sms_queue SET ';
+      const params: any[] = [];
+      const setClauses: string[] = [];
+
+      // Always update updated_at
+      setClauses.push('updated_at = CURRENT_TIMESTAMP');
+
+      if (success) {
+        // SMS sent successfully
+        setClauses.push('status = \'sent\'');
+        setClauses.push('sent_at = CURRENT_TIMESTAMP');
+      } else {
+        // SMS send failed
+        params.push(lastError);
+        setClauses.push(`last_error = $${params.length}`);
+
+        params.push(retryCount);
+        setClauses.push(`retry_count = $${params.length}`);
+
+        // Check if we've exhausted retries
+        if (retryCount >= 3) {
+          setClauses.push('status = \'failed_exhausted\'');
+          setClauses.push('failed_at = CURRENT_TIMESTAMP');
+        } else {
+          params.push(nextRetryAt);
+          setClauses.push(`next_retry_at = $${params.length}`);
+        }
+      }
+
+      query += setClauses.join(', ');
+      params.push(queueId);
+      query += ` WHERE id = $${params.length} RETURNING id, status, retry_count, next_retry_at, updated_at`;
+
+      const result = await this.query<any>(query, params);
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error(`SMS queue entry ${queueId} not found`);
+      }
+
+      logger.info('DATABASE', 'SMS queue entry updated', {
+        queueId,
+        status: result.rows[0].status,
+        retryCount: result.rows[0].retry_count,
+        success
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to update SMS queue status', {
+        queueId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete SMS from queue (after successful send)
+   * @param queueId - SMS queue record ID
+   * @returns void
+   */
+  async deleteSmsQueueEntry(queueId: string): Promise<void> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      await this.query('DELETE FROM sms_queue WHERE id = $1', [queueId]);
+
+      logger.debug('DATABASE', 'SMS queue entry deleted', { queueId });
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to delete SMS queue entry', {
+        queueId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Create report share link (for deep linking/phone-based sharing)
+   * @param shareData - {reportId, reporterId, shareToken, recipientPhone, expiresAt, message}
+   * @returns Share link record
+   */
+  async createShareLink(shareData: any): Promise<any> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const { reportId, reporterId, shareToken, recipientPhone, expiresAt, message } = shareData;
+
+      const result = await this.query<any>(
+        `INSERT INTO report_share_links (report_id, reporter_id, share_token, recipient_phone, expires_at, message, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+         RETURNING id, report_id, reporter_id, share_token, recipient_phone, expires_at, status, created_at`,
+        [reportId, reporterId, shareToken, recipientPhone || null, expiresAt, message || null]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('Failed to create share link');
+      }
+
+      logger.info('DATABASE', 'Share link created', {
+        reportId,
+        reporterId,
+        shareToken: shareToken.substring(0, 8) + '...',
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to create share link', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get share link by token
+   * @param shareToken - The share token
+   * @returns Share link record or null
+   */
+  async getShareLinkByToken(shareToken: string): Promise<any | null> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `SELECT id, report_id, reporter_id, share_token, recipient_phone, status, claimed_by_user_id,
+                claimed_at, expires_at, max_claims, claim_count, access_expires_at, access_level, message
+         FROM report_share_links
+         WHERE share_token = $1`,
+        [shareToken]
+      );
+
+      return result.rows?.[0] || null;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get share link', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Claim a share link (called when user accesses shared report)
+   * @param shareToken - The share token
+   * @param userId - User claiming the link
+   * @returns Updated share link record
+   */
+  async claimShareLink(shareToken: string, userId: string): Promise<any> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `UPDATE report_share_links
+         SET claimed_by_user_id = $2,
+             claim_count = claim_count + 1,
+             claimed_at = CURRENT_TIMESTAMP,
+             status = 'claimed'
+         WHERE share_token = $1
+         RETURNING id, report_id, reporter_id, claimed_by_user_id, claim_count, status, access_expires_at`,
+        [shareToken, userId]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error(`Share link ${shareToken} not found`);
+      }
+
+      logger.info('DATABASE', 'Share link claimed', {
+        shareToken: shareToken.substring(0, 8) + '...',
+        claimedBy: userId,
+      });
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to claim share link', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get share links created by a user
+   * @param reporterId - User who created the links
+   * @param limit - Results limit
+   * @param offset - Results offset
+   * @returns Array of share link records
+   */
+  async getShareLinksByReporter(reporterId: string, limit: number = 50, offset: number = 0): Promise<any[]> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `SELECT id, report_id, share_token, recipient_phone, status, claimed_by_user_id, claim_count,
+                max_claims, expires_at, claimed_at, created_at
+         FROM report_share_links
+         WHERE reporter_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [reporterId, limit, offset]
+      );
+
+      return result.rows || [];
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to get share links by reporter', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Check if user has valid access to report via share link
+   * @param reportId - Report ID
+   * @param userId - User ID
+   * @returns True if user has valid access, false otherwise
+   */
+  async hasShareLinkAccess(reportId: string, userId: string): Promise<boolean> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `SELECT id FROM report_share_links
+         WHERE report_id = $1
+         AND (claimed_by_user_id = $2 OR recipient_phone IN (
+           SELECT phone FROM users WHERE userid = $2
+         ))
+         AND status = 'claimed'
+         AND (access_expires_at IS NULL OR access_expires_at > CURRENT_TIMESTAMP)`,
+        [reportId, userId]
+      );
+
+      return (result.rows?.length || 0) > 0;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to check share link access', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Delete expired share links (cleanup job)
+   * @returns Number of deleted links
+   */
+  async deleteExpiredShareLinks(): Promise<number> {
+    try {
+      if (!this.isConnected) {
+        throw new Error('Database not initialized');
+      }
+
+      const result = await this.query<any>(
+        `DELETE FROM report_share_links
+         WHERE status = 'pending' AND expires_at < CURRENT_TIMESTAMP`,
+        []
+      );
+
+      const deletedCount = result.rowCount || 0;
+
+      if (deletedCount > 0) {
+        logger.info('DATABASE', 'Expired share links deleted', { count: deletedCount });
+      }
+
+      return deletedCount;
+    } catch (error) {
+      logger.error('DATABASE', 'Failed to delete expired share links', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
     }
   }
 

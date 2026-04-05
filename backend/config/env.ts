@@ -1,18 +1,81 @@
 /**
  * Typed environment configuration
  * Centralized env var access with validation
+ *
+ * Critical variables (must be set):
+ * - JWT_SECRET: Authentication tokens
+ * - DATABASE_URL: Database connection
+ *
+ * Production variables (must be set in production):
+ * - PRIVATE_KEY: Blockchain wallet private key
+ * - DEPLOYED_CONTRACT_ADDRESS: Smart contract address
+ * - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER: SMS service
+ * - EMAIL_FROM, EMAIL_PASSWORD: Email service (or use defaults)
+ * - ENCRYPTION_MASTER_KEY: Data encryption key
  */
 
-function getEnv(key: string): string {
+function getEnv(key: string, context?: string): string {
   const value = process.env[key];
   if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
+    const hint = context ? ` (${context})` : '';
+    throw new Error(`Missing required environment variable: ${key}${hint}`);
   }
   return value;
 }
 
 function getOptionalEnv(key: string, defaultValue?: string): string | undefined {
   return process.env[key] || defaultValue;
+}
+
+/**
+ * Validate critical environment variables
+ * Call this early in server startup
+ */
+export function validateEnvironment(): void {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const errors: string[] = [];
+
+  // Always required
+  try {
+    getEnv('JWT_SECRET', 'used for signing authentication tokens');
+  } catch (e) {
+    errors.push(`${e}`);
+  }
+
+  try {
+    getEnv('DATABASE_URL', 'PostgreSQL connection string');
+  } catch (e) {
+    errors.push(`${e}`);
+  }
+
+  // Production required
+  if (isProduction) {
+    const productionVars = [
+      ['PRIVATE_KEY', 'blockchain wallet private key (32 hex chars)'],
+      ['DEPLOYED_CONTRACT_ADDRESS', 'smart contract address on blockchain'],
+      ['TWILIO_ACCOUNT_SID', 'Twilio SMS service account ID'],
+      ['TWILIO_AUTH_TOKEN', 'Twilio SMS service auth token'],
+      ['TWILIO_PHONE_NUMBER', 'Twilio SMS phone number (e.g., +1234567890)'],
+      ['ENCRYPTION_MASTER_KEY', 'master key for encrypting user data'],
+    ];
+
+    for (const [key, description] of productionVars) {
+      if (!process.env[key]) {
+        errors.push(
+          `Missing production variable: ${key} (${description}). Set in GitHub Secrets and inject via Render.`
+        );
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error('❌ Environment validation failed:');
+    errors.forEach((err) => console.error(`   - ${err}`));
+    console.error('\n📖 See GITHUB_SECRETS_SETUP.md for configuration instructions.');
+    process.exit(1);
+  }
+
+  console.log('✅ Environment variables validated');
 }
 
 export const env = {
@@ -22,6 +85,7 @@ export const env = {
 
   // JWT
   jwtSecret: getEnv('JWT_SECRET'),
+  jwtSecretPrevious: getOptionalEnv('JWT_SECRET_PREVIOUS'), // For secret rotation
 
   // Database
   databaseUrl: getEnv('DATABASE_URL'),

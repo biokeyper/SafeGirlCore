@@ -9,15 +9,27 @@ const router = express.Router();
 import authController from '../controllers/authController';
 import deleteAccountController from '../controllers/deleteAccountController';
 import authMiddleware from '../middleware/auth';
-import rateLimit from '../middleware/rateLimit';
 import {
-  validateSignup,
-  validateLogin,
-  validateOTP,
-  validatePhoneChange,
-  validateForgotPhone,
-  validatePin,
-} from '../middleware/validation';
+  otpVerifyLimiter,
+  otpInitiateLimiter,
+  recoveryLimiter,
+} from '../middleware/rateLimiter';
+import { validate } from '../middleware/validateRequest';
+import {
+  signupInitiateSchema,
+  signupVerifySchema,
+  loginInitiateSchema,
+  loginVerifySchema,
+  setupEmailSchema,
+  forgotPhoneSchema,
+  verifyRecoverySchema,
+  changePhoneRecoverySchema,
+  verifyPhoneChangeRecoverySchema,
+  changePhoneSchema,
+  verifyPhoneChangeSchema,
+  setPinSchema,
+  deleteAccountSchema,
+} from '../schemas/validation';
 
 /**
  * SIGNUP FLOW
@@ -26,12 +38,12 @@ import {
 /**
  * POST /api/auth/signup/initiate
  * Step 1: User provides phone, receive OTP
- * Rate limit: 5 attempts per 15 minutes per phone
+ * Rate limit: 10 attempts per hour per IP
  */
 router.post(
   '/signup/initiate',
-  rateLimit.limit(5, 15 * 60 * 1000),
-  validateSignup,
+  otpInitiateLimiter,
+  validate(signupInitiateSchema, 'body'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await authController.initiateSignup(req, res, next);
@@ -44,12 +56,12 @@ router.post(
 /**
  * POST /api/auth/signup/verify
  * Step 2: User enters OTP, account created, receive JWT
- * Rate limit: 5 attempts per 15 minutes per phone
+ * Rate limit: 3 attempts per 5 minutes per phone
  */
 router.post(
   '/signup/verify',
-  rateLimit.limit(5, 15 * 60 * 1000),
-  validateOTP,
+  otpVerifyLimiter,
+  validate(signupVerifySchema, 'body'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await authController.verifySignup(req, res, next);
@@ -66,12 +78,12 @@ router.post(
 /**
  * POST /api/auth/login/initiate
  * Step 1: User provides phone, receive OTP
- * Rate limit: 5 attempts per 15 minutes per phone
+ * Rate limit: 10 attempts per hour per IP
  */
 router.post(
   '/login/initiate',
-  rateLimit.limit(5, 15 * 60 * 1000),
-  validateLogin,
+  otpInitiateLimiter,
+  validate(loginInitiateSchema, 'body'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await authController.initiateLogin(req, res, next);
@@ -84,12 +96,12 @@ router.post(
 /**
  * POST /api/auth/login/verify
  * Step 2: User enters OTP, receive JWT
- * Rate limit: 5 attempts per 15 minutes per phone
+ * Rate limit: 3 attempts per 5 minutes per phone
  */
 router.post(
   '/login/verify',
-  rateLimit.limit(5, 15 * 60 * 1000),
-  validateOTP,
+  otpVerifyLimiter,
+  validate(loginVerifySchema, 'body'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await authController.verifyLogin(req, res, next);
@@ -106,50 +118,74 @@ router.post(
 /**
  * POST /api/auth/forgot-phone
  * Step 1: User provides email, receive recovery token
+ * Rate limit: 5 attempts per hour per IP
  */
-router.post('/forgot-phone', validateForgotPhone, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.forgotPhone(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/forgot-phone',
+  recoveryLimiter,
+  validate(forgotPhoneSchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.forgotPhone(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * POST /api/auth/verify-recovery
  * Step 2: User provides recovery token, token verified
+ * Rate limit: 5 attempts per hour per IP
  */
-router.post('/verify-recovery', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.verifyRecoveryToken(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/verify-recovery',
+  recoveryLimiter,
+  validate(verifyRecoverySchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.verifyRecoveryToken(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * POST /api/auth/change-phone/recovery
  * Step 3: User provides new phone, receive OTP on new phone
+ * Rate limit: 5 attempts per hour per IP
  */
-router.post('/change-phone/recovery', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.changePhoneViaRecovery(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/change-phone/recovery',
+  recoveryLimiter,
+  validate(changePhoneRecoverySchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.changePhoneViaRecovery(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * POST /api/auth/verify-phone-change/recovery
  * Step 4: User enters OTP from new phone, phone changed, receive new JWT
+ * Rate limit: 5 attempts per hour per IP
  */
-router.post('/verify-phone-change/recovery', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.verifyPhoneChangeRecovery(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/verify-phone-change/recovery',
+  recoveryLimiter,
+  validate(verifyPhoneChangeRecoverySchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.verifyPhoneChangeRecovery(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * AUTHENTICATED USER - PHONE CHANGE
@@ -158,11 +194,13 @@ router.post('/verify-phone-change/recovery', async (req: Request, res: Response,
 /**
  * POST /api/auth/change-phone
  * Step 1: Authenticated user initiates phone change, receive OTP on new phone
+ * Rate limit: 5 attempts per hour per IP (more lenient for authenticated users)
  */
 router.post(
   '/change-phone',
   authMiddleware,
-  validatePhoneChange,
+  recoveryLimiter,
+  validate(changePhoneSchema, 'body'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await authController.initiatePhoneChange(req, res, next);
@@ -175,14 +213,21 @@ router.post(
 /**
  * POST /api/auth/verify-phone-change
  * Step 2: Authenticated user enters OTP, phone changed, receive new JWT
+ * Rate limit: 5 attempts per hour per IP (more lenient for authenticated users)
  */
-router.post('/verify-phone-change', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.verifyPhoneChange(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/verify-phone-change',
+  authMiddleware,
+  recoveryLimiter,
+  validate(verifyPhoneChangeSchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.verifyPhoneChange(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * UTILITY
@@ -205,13 +250,18 @@ router.get('/verify', authMiddleware, async (req: Request, res: Response, next: 
  * Authenticated user sets recovery email after signup/login
  * Protected endpoint - requires valid JWT token
  */
-router.post('/setup-email', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.setupRecoveryEmail(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/setup-email',
+  authMiddleware,
+  validate(setupEmailSchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.setupRecoveryEmail(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * GET /api/auth/verify-email
@@ -235,13 +285,18 @@ router.get('/verify-email', async (req: Request, res: Response, next: NextFuncti
  * Authenticated user sets or updates their content lock PIN
  * Protected endpoint - requires valid JWT token
  */
-router.post('/set-pin', authMiddleware, validatePin, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await authController.setPin(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/set-pin',
+  authMiddleware,
+  validate(setPinSchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await authController.setPin(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * GET /api/auth/get-pin
@@ -265,13 +320,18 @@ router.get('/get-pin', authMiddleware, async (req: Request, res: Response, next:
  * Authenticated user permanently deletes their account and all data
  * Protected endpoint - requires valid JWT token
  */
-router.post('/delete-account', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await deleteAccountController.deleteAccount(req, res, next);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post(
+  '/delete-account',
+  authMiddleware,
+  validate(deleteAccountSchema, 'body'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await deleteAccountController.deleteAccount(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /**
  * LOGOUT

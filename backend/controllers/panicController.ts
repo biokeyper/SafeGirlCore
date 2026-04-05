@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from "express";
 import blockchainService from "../services/blockchain";
 import databaseService from "../services/database";
 import emailService from "../services/email";
+import smsBatchProcessor from "../services/smsBatchProcessor";
 import logger from "../utils/logger";
 
 class PanicController {
@@ -186,7 +187,7 @@ class PanicController {
 
       // ========== PRIORITY 1: Send SMS immediately (independent of blockchain) ==========
       // Start SMS immediately - don't wait for blockchain
-      const smsPromise = this.sendEmergencyContactAlerts(userId, locationData)
+      const smsPromise = this.sendEmergencyContactAlerts(userId, locationData, alertId)
         .then(() => {
           logger.success("PANIC", "Emergency SMS alerts sent", {
             userId,
@@ -347,7 +348,8 @@ class PanicController {
    */
   private async sendEmergencyContactAlerts(
     userId: string,
-    locationData: string
+    locationData: string,
+    alertId: number
   ): Promise<void> {
     try {
       // Get user's custom panic message
@@ -399,7 +401,7 @@ class PanicController {
 
       const fullMessage = `${panicMessage}\n\nLocation: ${mapLink}`;
 
-      // Send SMS to each emergency contact
+      // Send SMS to each emergency contact (using batch processor for cost optimization)
       const smsResults: any[] = [];
       for (let contact of contactsResult.rows) {
         try {
@@ -419,28 +421,48 @@ class PanicController {
             continue;
           }
 
-          // Send SMS via email service (Twilio integration)
-          await emailService.sendSMS(normalizedPhone, fullMessage);
-          smsResults.push({ phone: normalizedPhone, sent: true });
+          // Add to SMS batch queue (for 30-second batching and deduplication)
+          // Batch processor will:
+          // 1. Wait 30 seconds to collect all SMS in window
+          // 2. Deduplicate by phone (keep only latest/first message per phone)
+          // 3. Send all at once
+          // 4. If send fails, automatically go to retry queue
+          const queuedSms = await (databaseService as any).saveSmsToQueue(
+            alertId.toString(),
+            userId,
+            normalizedPhone,
+            fullMessage
+          );
 
-          logger.info("PANIC", "Emergency SMS sent", {
+          // Add to batch processor for deduplication and cost optimization
+          smsBatchProcessor.addToSmsBatch(queuedSms);
+
+          smsResults.push({
+            phone: normalizedPhone,
+            sent: true,
+            batched: true,
+            queueId: queuedSms.id,
+          });
+
+          logger.info("PANIC", "SMS added to batch queue", {
             userId,
             phone: normalizedPhone,
             name: contact.name,
+            alertId,
+            queueId: queuedSms.id,
           });
-
-          // Rate limit: 1 second between SMS to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           smsResults.push({
             phone: contact.phone,
             sent: false,
+            batched: false,
             error: errorMsg,
           });
-          logger.error("PANIC", "Emergency SMS failed", {
+          logger.error("PANIC", "Failed to add SMS to batch queue", {
             userId,
             phone: contact.phone,
+            alertId,
             error: errorMsg,
           });
         }
@@ -581,6 +603,31 @@ class PanicController {
         res.status(409).json({
           error: true,
           message: "This contact is already in your emergency list",
+        });
+        return;
+      }
+
+      // Check if user has reached maximum emergency contacts (3 limit)
+      const countResult = await (databaseService as any).query(
+        "SELECT COUNT(*) as count FROM emergency_contacts WHERE userid = $1 AND isactive = true",
+        [userId]
+      );
+
+      const activeContactCount = countResult.rows?.[0]?.count || 0;
+      if (activeContactCount >= 3) {
+        logger.warn("PANIC", "Emergency contact limit reached", {
+          userId,
+          currentCount: activeContactCount,
+          limit: 3,
+        });
+        res.status(400).json({
+          error: true,
+          message: "You can have a maximum of 3 emergency contacts",
+          code: "EMERGENCY_CONTACT_LIMIT_REACHED",
+          data: {
+            currentCount: activeContactCount,
+            limit: 3,
+          },
         });
         return;
       }

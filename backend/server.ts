@@ -3,8 +3,10 @@ import "dotenv/config";
 import express, { Express, Request, Response, NextFunction } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import helmet from "helmet";
 
 import logger from "./utils/logger";
+import { validateEnvironment } from "./config/env";
 import contractManager from "./config/contracts";
 import eventListener from "./services/eventListener";
 import ipfsService from "./services/ipfs";
@@ -14,11 +16,14 @@ import { start as startConfirmationScheduler, stop as stopConfirmationScheduler 
 import reportRoutes from "./routes/reports";
 import authRoutes from "./routes/auth";
 import accessRoutes from "./routes/access";
+import shareRoutes from "./routes/share";
 import panicRoutes from "./routes/panic";
 import emergencyRoutes from "./routes/emergency";
 import searchRoutes from "./routes/search";
 import notificationRoutes from "./routes/notifications";
 import emailService from "./services/email";
+import smsRetryProcessor from "./services/smsRetryProcessor";
+import smsBatchProcessor from "./services/smsBatchProcessor";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
 const app: Express = express();
@@ -29,13 +34,54 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Security headers middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+  frameguard: {
+    action: "deny",
+  },
+  noSniff: true,
+  referrerPolicy: {
+    policy: "strict-origin-when-cross-origin",
+  },
+}));
+
 app.use(bodyParser.json({ limit: process.env.MAX_PAYLOAD_SIZE || "10mb" }));
 app.use(bodyParser.text());
 
+// CORS whitelist - only allow frontend URLs
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "http://localhost:3000",
+  "http://localhost:3000",
+  "http://localhost:8080",
+];
+
 app.use(
   cors({
-    origin: "*",
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS policy violation"));
+      }
+    },
     credentials: true,
+    methods: ["GET", "POST", "DELETE", "PUT"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    maxAge: 3600, // Cache preflight for 1 hour
   }),
 );
 
@@ -84,7 +130,11 @@ async function initializeServices(): Promise<boolean> {
     logger.logServer("Starting confirmation scheduler...");
     startConfirmationScheduler();
 
-    // 6. Start event listener (disabled - using database logging instead of blockchain filters)
+    // 6. Start SMS retry processor (handles failed emergency contact alerts)
+    logger.logServer("Starting SMS retry processor...");
+    smsRetryProcessor.start();
+
+    // 7. Start event listener (disabled - using database logging instead of blockchain filters)
     // logger.logServer('Starting event listener...');
     // await eventListener.startListening();
 
@@ -103,6 +153,7 @@ async function initializeServices(): Promise<boolean> {
 app.use("/api", reportRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/access", accessRoutes);
+app.use("/api/share", shareRoutes);
 app.use("/api/panic-alert", panicRoutes);
 app.use("/api/emergency", emergencyRoutes);
 app.use("/api/search", searchRoutes);
@@ -129,12 +180,108 @@ app.get("/", (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Health Check Endpoint
+ * Used by load balancers and monitoring systems to determine service health
+ * Returns status of all critical components
+ */
+app.get("/api/health", async (req: Request, res: Response) => {
+  try {
+    logger.debug("HEALTH", "Health check requested");
+
+    const startTime = Date.now();
+
+    // Check database health
+    let databaseHealthy = false;
+    try {
+      databaseHealthy = await (databaseService as any).ping();
+    } catch (error) {
+      logger.warn("HEALTH", "Database health check failed", {
+        error: (error as Error).message,
+      });
+    }
+
+    // Check blockchain connectivity
+    let blockchainHealthy = false;
+    try {
+      // Simple check: provider should be connected
+      const provider = (contractManager as any)?.provider;
+      blockchainHealthy = !!provider && typeof provider.getBlockNumber === "function";
+    } catch (error) {
+      logger.warn("HEALTH", "Blockchain health check failed", {
+        error: (error as Error).message,
+      });
+    }
+
+    // Check IPFS connectivity
+    let ipfsHealthy = false;
+    try {
+      ipfsHealthy = (ipfsService as any)?.isConnected?.() || false;
+    } catch (error) {
+      logger.warn("HEALTH", "IPFS health check failed", {
+        error: (error as Error).message,
+      });
+    }
+
+    // Get database pool stats for monitoring
+    const poolStats = (databaseService as any).getPoolStats?.();
+
+    // Determine overall health status
+    let overallStatus = "healthy";
+    if (!databaseHealthy) {
+      overallStatus = "unhealthy"; // Database is critical
+    } else if (!blockchainHealthy || !ipfsHealthy) {
+      overallStatus = "degraded"; // Non-critical services failing
+    }
+
+    const responseTime = Date.now() - startTime;
+
+    const healthResponse = {
+      status: overallStatus,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      responseTime: `${responseTime}ms`,
+      components: {
+        database: databaseHealthy,
+        blockchain: blockchainHealthy,
+        ipfs: ipfsHealthy,
+      },
+      poolStats: poolStats || undefined,
+    };
+
+    // Log health check result
+    if (overallStatus === "healthy") {
+      logger.debug("HEALTH", "Health check passed", { responseTime });
+    } else {
+      logger.warn("HEALTH", `Health check ${overallStatus}`, healthResponse);
+    }
+
+    // Return appropriate status code
+    const statusCode = overallStatus === "healthy" ? 200 : 503;
+    res.status(statusCode).json(healthResponse);
+  } catch (error) {
+    logger.error("HEALTH", "Health check endpoint error", {
+      error: (error as Error).message,
+    });
+
+    res.status(503).json({
+      status: "error",
+      timestamp: new Date().toISOString(),
+      message: "Health check failed",
+      error: (error as Error).message,
+    });
+  }
+});
+
 app.use(notFoundHandler);
 
 app.use(errorHandler);
 
 async function startServer(): Promise<void> {
   try {
+    // Validate environment variables early
+    validateEnvironment();
+
     // Initialize services
     const servicesReady = await initializeServices();
 
@@ -216,6 +363,23 @@ async function startServer(): Promise<void> {
         "    GET    /api/access/report/:reportId          - View a shared report",
       );
       logger.logServer("");
+      logger.logServer("  SHARE (Phone-based Sharing with Deep Linking - Protected):");
+      logger.logServer(
+        "    POST   /api/share/generate                   - Generate shareable link",
+      );
+      logger.logServer(
+        "    POST   /api/share/claim/:token               - Claim share link (after sign-in)",
+      );
+      logger.logServer(
+        "    GET    /api/share/my-links                   - Get my share links",
+      );
+      logger.logServer(
+        "    DELETE /api/share/revoke/:token              - Revoke share link",
+      );
+      logger.logServer(
+        "    GET    /api/share/info/:token                - Get share link info (public)",
+      );
+      logger.logServer("");
       logger.logServer("  PANIC ALERTS (Protected - Rate Limited):");
       logger.logServer(
         "    POST   /api/panic-alert                      - Send emergency panic alert",
@@ -267,6 +431,8 @@ async function startServer(): Promise<void> {
 process.on("SIGINT", async () => {
   logger.logServer("Shutdown signal received...");
   stopConfirmationScheduler();
+  smsRetryProcessor.stop();
+  await smsBatchProcessor.flushBatchImmediate();
   eventListener.stopListening();
   await databaseService.close();
   logger.logServer("Server stopped");
@@ -276,6 +442,8 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   logger.logServer("Termination signal received...");
   stopConfirmationScheduler();
+  smsRetryProcessor.stop();
+  await smsBatchProcessor.flushBatchImmediate();
   eventListener.stopListening();
   await databaseService.close();
   logger.logServer("Server stopped");

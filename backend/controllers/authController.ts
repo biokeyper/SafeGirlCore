@@ -3,21 +3,13 @@
  * Handles OTP-based signup, login, and account recovery
  */
 
-import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 import databaseService from "../services/database";
 import otpService from "../services/otp";
 import emailService from "../services/email";
 import logger from "../utils/logger";
+import { getJwtService } from "../services/jwtService";
 import crypto from "crypto";
-
-function getJwtSecretOrThrow(): string {
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    throw new Error("JWT_SECRET is not configured");
-  }
-  return jwtSecret;
-}
 
 class AuthController {
   /**
@@ -107,7 +99,10 @@ class AuthController {
       const otpVerify = await (otpService as any).verifyOTP(phone, otp, "signup");
 
       if (!otpVerify.success) {
-        res.status(401).json({
+        // Return 429 (Too Many Requests) if account is locked
+        const statusCode = otpVerify.code === "ACCOUNT_LOCKED" ? 429 : 401;
+
+        res.status(statusCode).json({
           error: true,
           message: otpVerify.message,
           code: otpVerify.code,
@@ -134,11 +129,13 @@ class AuthController {
       const user = result.rows[0];
 
       // Generate JWT token
-      const token = jwt.sign(
-        { userId: user.userid, phone: user.phone, email: user.email || null, country: user.country },
-        getJwtSecretOrThrow(),
-        { expiresIn: "7d" },
-      );
+      const jwtService = getJwtService();
+      const token = jwtService.sign({
+        userId: user.userid,
+        phone: user.phone,
+        email: user.email || null,
+        country: user.country,
+      });
 
       logger.success("AUTH", "User signed up successfully", {
         userId: user.userid,
@@ -249,7 +246,10 @@ class AuthController {
       const otpVerify = await (otpService as any).verifyOTP(phone, otp, "login");
 
       if (!otpVerify.success) {
-        res.status(401).json({
+        // Return 429 (Too Many Requests) if account is locked
+        const statusCode = otpVerify.code === "ACCOUNT_LOCKED" ? 429 : 401;
+
+        res.status(statusCode).json({
           error: true,
           message: otpVerify.message,
           code: otpVerify.code,
@@ -277,11 +277,13 @@ class AuthController {
       );
 
       // Generate JWT token
-      const token = jwt.sign(
-        { userId: user.userid, phone: user.phone, email: user.email, country: user.country },
-        getJwtSecretOrThrow(),
-        { expiresIn: "7d" },
-      );
+      const jwtService = getJwtService();
+      const token = jwtService.sign({
+        userId: user.userid,
+        phone: user.phone,
+        email: user.email,
+        country: user.country,
+      });
 
       logger.success("AUTH", "User logged in successfully", {
         userId: user.userid,
@@ -613,11 +615,13 @@ class AuthController {
       await (otpService as any).markRecoveryTokenUsed(token);
 
       // Generate new JWT token with updated phone
-      const newToken = jwt.sign(
-        { userId: user.userid, phone: user.phone, email: user.email },
-        getJwtSecretOrThrow(),
-        { expiresIn: "7d" },
-      );
+      const jwtService = getJwtService();
+      const newToken = jwtService.sign({
+        userId: user.userid,
+        phone: user.phone,
+        email: user.email,
+        country: user.country,
+      });
 
       logger.success("AUTH", "Phone number changed successfully via recovery", {
         userId: user.userid,
@@ -762,11 +766,13 @@ class AuthController {
       const user = result.rows[0];
 
       // Generate new JWT with updated phone
-      const newToken = jwt.sign(
-        { userId: user.userid, phone: user.phone, email: user.email },
-        getJwtSecretOrThrow(),
-        { expiresIn: "7d" },
-      );
+      const jwtService = getJwtService();
+      const newToken = jwtService.sign({
+        userId: user.userid,
+        phone: user.phone,
+        email: user.email,
+        country: user.country,
+      });
 
       logger.success("AUTH", "Phone number changed successfully", {
         userId,

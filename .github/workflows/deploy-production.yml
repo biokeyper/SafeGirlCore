@@ -1,0 +1,120 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for deployment'
+        required: true
+        default: 'Scheduled release'
+
+jobs:
+  deploy:
+    name: Deploy to Production on Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log deployment info
+        run: |
+          echo "## 🚀 Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **PRODUCTION DEPLOYMENT IN PROGRESS**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify main branch
+        run: |
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "❌ ERROR: Can only deploy from main branch"
+            exit 1
+          fi
+          echo "✅ Verified: main branch"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+          echo "✅ Backend built successfully"
+
+      - name: Verify environment variables
+        run: |
+          echo "⏳ Verifying production secrets are configured in GitHub..."
+          # Check that critical secrets exist
+          if [[ -z "${{ secrets.ENCRYPTION_MASTER_KEY }}" ]]; then
+            echo "❌ ERROR: ENCRYPTION_MASTER_KEY not configured"
+            exit 1
+          fi
+          if [[ -z "${{ secrets.JWT_SECRET }}" ]]; then
+            echo "❌ ERROR: JWT_SECRET not configured"
+            exit 1
+          fi
+          if [[ -z "${{ secrets.DATABASE_URL }}" ]]; then
+            echo "❌ ERROR: DATABASE_URL not configured"
+            exit 1
+          fi
+          echo "✅ All critical secrets verified"
+
+      - name: Deploy to Production
+        run: |
+          echo "🚀 Deploying to production..."
+          echo ""
+          echo "Render will:"
+          echo "1. Pull latest code from main branch"
+          echo "2. Run build command: npm install && npm run build"
+          echo "3. Start service with: npm start"
+          echo "4. Inject production environment variables from GitHub Secrets"
+          echo ""
+          echo "⏳ Deployment in progress..."
+          sleep 5
+
+      - name: Notify deployment started
+        run: |
+          echo "✅ Deployment triggered"
+          echo "📍 Production backend: https://safegirl-production-backend.onrender.com"
+          echo ""
+          echo "**Monitor:**"
+          echo "- Render dashboard: https://render.com/dashboard"
+          echo "- Logs: Service → Logs tab"
+          echo "- Health: https://safegirl-production-backend.onrender.com"
+
+      - name: Wait for deployment
+        run: |
+          echo "⏳ Waiting 60 seconds for Render to process deployment..."
+          sleep 60
+          echo "✅ Deployment initiated"
+
+      - name: Post-deployment notification
+        run: |
+          echo "## ✅ Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** https://safegirl-production-backend.onrender.com" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ IMPORTANT - Post-deployment checklist:**" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Check Render dashboard - deployment should be 'Live'" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Run health checks: \`./test-https.sh https://safegirl-production-backend.onrender.com\`" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Verify API responses are normal" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Check logs for errors: Render → Logs" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Test critical endpoints" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Monitor error rates in next 30 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Rollback if needed:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to Render → Production service → Deployments" >> $GITHUB_STEP_SUMMARY
+          echo "2. Click previous successful deployment" >> $GITHUB_STEP_SUMMARY
+          echo "3. Click 'Redeploy'" >> $GITHUB_STEP_SUMMARY

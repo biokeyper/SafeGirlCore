@@ -1,27 +1,17 @@
 /**
  * JWT Authentication Middleware
  * Verifies JWT token and attaches user info to request
+ * Supports secret rotation via JWT_SECRET_PREVIOUS
  */
 
 import jwt from 'jsonwebtoken';
 import logger from '../utils/logger';
 import { AuthenticatedRequest, JwtPayload } from '../types/index';
 import { Response, NextFunction } from 'express';
+import { getJwtService } from '../services/jwtService';
 
 function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   try {
-    const jwtSecret = process.env.JWT_SECRET;
-
-    if (!jwtSecret) {
-      logger.error('AUTH', 'JWT_SECRET is not configured');
-      res.status(500).json({
-        error: true,
-        message: 'Server authentication is not configured',
-        code: 'SERVER_MISCONFIG',
-      });
-      return;
-    }
-
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
 
@@ -38,7 +28,9 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
 
     const token = authHeader.slice(7);
 
-    const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
+    // Use JWT service for verification (supports rotation)
+    const jwtService = getJwtService();
+    const decoded = jwtService.verify(token) as JwtPayload;
 
     req.user = {
       userId: decoded.userId,
