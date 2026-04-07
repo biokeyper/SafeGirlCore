@@ -7,7 +7,7 @@ import { Response, NextFunction } from 'express';
 import ipfsService from '../services/ipfs';
 import blockchainService from '../services/blockchain';
 import databaseService from '../services/database';
-import encryptionService from '../services/encryption';
+import encryptionService from '../services/encryptionWithRotation';
 import logger from '../utils/logger';
 import { AuthenticatedRequest, Submission } from '../types';
 

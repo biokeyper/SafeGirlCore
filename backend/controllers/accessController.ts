@@ -12,10 +12,17 @@ class AccessController {
    * Grant access to a specific report to another user
    * POST /api/access/grant
    *
-   * Body:
+   * Body (userId):
    * {
    *   reportId: "report_...",
    *   grantToUserId: "user_...",
+   *   expiresIn: 2592000  // Optional: seconds (default 30 days)
+   * }
+   *
+   * Body (phone - recommended):
+   * {
+   *   reportId: "report_...",
+   *   phone: "+256750902921",  // Phone number to grant access to
    *   expiresIn: 2592000  // Optional: seconds (default 30 days)
    * }
    */
@@ -25,19 +32,25 @@ class AccessController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { reportId, grantToUserId, expiresIn } = req.body;
+      const { reportId, grantToUserId, phone, expiresIn } = req.body;
       const reporterUserId = req.user?.userId;
 
-      logger.logRequest("POST", "/api/access/grant", { reportId, grantToUserId });
+      logger.logRequest("POST", "/api/access/grant", { reportId, grantToUserId, phone });
 
-      if (!reportId || !grantToUserId) {
-        logger.warn("ACCESS", "Missing required fields", {
-          reportId: !!reportId,
-          grantToUserId: !!grantToUserId,
-        });
+      if (!reportId) {
+        logger.warn("ACCESS", "Missing reportId", {});
         res.status(400).json({
           error: true,
-          message: "reportId and grantToUserId are required",
+          message: "reportId is required",
+        });
+        return;
+      }
+
+      if (!grantToUserId && !phone) {
+        logger.warn("ACCESS", "Missing both grantToUserId and phone", {});
+        res.status(400).json({
+          error: true,
+          message: "Either grantToUserId or phone is required",
         });
         return;
       }
@@ -51,7 +64,30 @@ class AccessController {
         return;
       }
 
-      if (grantToUserId === reporterUserId) {
+      let targetUserId = grantToUserId;
+
+      // If phone provided, look up userId
+      if (phone) {
+        const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+        const userResult = await (databaseService as any).query(
+          `SELECT userid FROM users WHERE phone = $1 LIMIT 1`,
+          [normalizedPhone]
+        );
+
+        if (!userResult.rows || userResult.rows.length === 0) {
+          logger.warn("ACCESS", "User not found by phone", { phone: normalizedPhone });
+          res.status(404).json({
+            error: true,
+            message: "User not found with that phone number",
+            code: "USER_NOT_FOUND",
+          });
+          return;
+        }
+
+        targetUserId = userResult.rows[0].userid;
+      }
+
+      if (targetUserId === reporterUserId) {
         logger.warn("ACCESS", "Cannot grant access to self", {
           reportId,
           userId: reporterUserId,
@@ -80,9 +116,9 @@ class AccessController {
       }
 
       // Check if target user exists
-      const targetUser = await (databaseService as any).getUser(grantToUserId);
+      const targetUser = await (databaseService as any).getUser(targetUserId);
       if (!targetUser) {
-        logger.warn("ACCESS", "Target user does not exist", { grantToUserId });
+        logger.warn("ACCESS", "Target user does not exist", { targetUserId });
         res.status(404).json({
           error: true,
           message: "User does not exist",
@@ -95,19 +131,19 @@ class AccessController {
         ? new Date(Date.now() + expiresIn * 1000)
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days default
 
-      logger.info("ACCESS", "Granting access to user", { reportId, grantToUserId });
+      logger.info("ACCESS", "Granting access to user", { reportId, targetUserId });
 
       const access = await (databaseService as any).grantAccess({
         reportId,
         reporterId: reporterUserId,
-        viewerId: grantToUserId,
+        viewerId: targetUserId,
         expiresAt,
         txHash: null,
       });
 
       logger.success("ACCESS", "Access saved to database", {
         reportId,
-        grantToUserId,
+        grantToUserId: targetUserId,
         accessId: access.id,
       });
 
@@ -117,7 +153,8 @@ class AccessController {
         data: {
           accessId: access.id,
           reportId,
-          grantedTo: grantToUserId,
+          grantedTo: targetUserId,
+          grantedToPhone: targetUser.phone,
           expiresAt: expiresAt.toISOString(),
         },
       });

@@ -68,15 +68,19 @@
 - **Implementation:** Dynamic origin validation with allowedOrigins array, supports mobile apps (no origin header)
 - **Status:** Complete and tested
 
-### 8. **Encryption Master Key Not Rotatable**
+### 8. **Encryption Master Key Not Rotatable** ✅ DONE
 - **Issue:** `ENCRYPTION_MASTER_KEY` is hardcoded; if exposed, all user data is decryptable
-- **Risk:** Data breach
-- **Fix:** 
-  - Support key rotation (new key encrypts existing keys)
-  - Store keys in vault (not .env)
-  - Add migration script for re-encryption
-- **Effort:** 4-6 hours
-- **Blocking:** Maybe (depends on data sensitivity)
+- **Solution:** Key rotation with version tracking
+- **Implementation:** Switched to `encryptionWithRotation.ts` with support for:
+  - `ENCRYPTION_MASTER_KEY` (current key - used for new encryption)
+  - `ENCRYPTION_MASTER_KEY_PREVIOUS` (old key - decryption during rotation)
+  - `ENCRYPTION_KEY_VERSION` (tracks which version encrypted each record)
+- **Features:**
+  - New data encrypted with current key (v2)
+  - Old data decrypted with previous key (v1) during rotation window
+  - Seamless rotation without re-encrypting all data
+  - Optional migration script to re-encrypt old data
+- **Status:** Complete, integrated with reportController and database service
 
 ---
 
@@ -425,6 +429,26 @@
   - Create dashboards (request rate, error rate, latency, user signups)
 - **Effort:** 6-8 hours
 - **Impact:** Enables SLA monitoring, incident response
+
+### 23. **User Profile Management (Username + Profile Picture)**
+- **Issue:** No way to set username or profile picture; phone-only identity
+- **Risk:** Users can't identify each other; report sharing only by phone
+- **Fix:**
+  - Add `users` table columns: `username VARCHAR(50)`, `profilePicture TEXT` (URL)
+  - Create `POST /api/user/profile/update` endpoint (protected)
+    - Input: { username, profilePicture }
+    - Validation: username 3-50 chars, alphanumeric + underscore
+  - Create `GET /api/user/profile/:phone` endpoint (public)
+    - Returns: { phone, username, profilePicture } for phone-based search
+  - Update share grant endpoint to use phone + lookup username
+  - Update `/api/search/user-by-phone` to return username + picture
+- **Database:**
+  - `ALTER TABLE users ADD COLUMN username VARCHAR(50) UNIQUE;`
+  - `ALTER TABLE users ADD COLUMN profilePicture TEXT;`
+  - Create index: `CREATE INDEX idx_users_username ON users(username);`
+- **Effort:** 3-4 hours
+- **Impact:** Better user identification, enables phone-based sharing with names
+- **Blocking:** For phone-based sharing feature to be complete
 
 ### 22. **No APM (Application Performance Monitoring)**
 - **Issue:** Can't trace slow requests or identify bottlenecks

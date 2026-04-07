@@ -6,7 +6,7 @@
 
 import logger from '../utils/logger';
 import * as crypto from 'crypto';
-import encryptionService from './encryption';
+import encryptionService from './encryptionWithRotation';
 import ipfsService from './ipfs';
 import * as pg from 'pg';
 

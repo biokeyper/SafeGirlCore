@@ -113,6 +113,11 @@ export const env = {
   gmailPassword: getOptionalEnv('GMAIL_PASSWORD'),
   frontendUrl: getOptionalEnv('FRONTEND_URL', 'http://localhost:3000'),
 
+  // Encryption (with rotation support)
+  encryptionMasterKey: getEnv('ENCRYPTION_MASTER_KEY'),
+  encryptionMasterKeyPrevious: getOptionalEnv('ENCRYPTION_MASTER_KEY_PREVIOUS') || undefined, // For key rotation
+  encryptionKeyVersion: parseInt(getOptionalEnv('ENCRYPTION_KEY_VERSION', '1') || '1', 10),
+
   // Logging
   logLevel: getOptionalEnv('LOG_LEVEL', 'info'),
 };

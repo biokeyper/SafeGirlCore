@@ -208,6 +208,98 @@ class SearchController {
       });
     }
   }
+
+  /**
+   * Search for user by phone number
+   * GET /api/search/user-by-phone?phone=+256750902921
+   * Protected: User must be authenticated
+   * Purpose: Find user for sharing/access grant by phone number
+   */
+  async searchUserByPhone(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+      const { phone } = req.query;
+
+      logger.logRequest("GET", "/api/search/user-by-phone", { userId, phone });
+
+      if (!userId) {
+        logger.warn("SEARCH", "User not authenticated", {});
+        res.status(401).json({
+          error: true,
+          message: "Authentication required",
+        });
+        return;
+      }
+
+      if (!phone || typeof phone !== 'string') {
+        logger.warn("SEARCH", "Missing phone parameter", {});
+        res.status(400).json({
+          error: true,
+          message: "phone parameter is required (e.g., +256750902921)",
+        });
+        return;
+      }
+
+      // Normalize phone (ensure E.164 format)
+      const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+
+      // Search for user by phone
+      const result = await (databaseService as any).query(
+        `SELECT userid, phone, username
+         FROM users
+         WHERE phone = $1
+         LIMIT 1`,
+        [normalizedPhone]
+      );
+
+      if (!result.rows || result.rows.length === 0) {
+        logger.info("SEARCH", "User not found by phone", { phone: normalizedPhone });
+        res.status(404).json({
+          error: true,
+          message: "User not found",
+          code: "USER_NOT_FOUND",
+          data: {
+            phone: normalizedPhone,
+            exists: false,
+          },
+        });
+        return;
+      }
+
+      const user = result.rows[0];
+
+      logger.success("SEARCH", "User found by phone", {
+        userId,
+        foundUserId: user.userid,
+        phone: normalizedPhone,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "User found",
+        data: {
+          userId: user.userid,
+          phone: user.phone,
+          username: user.username || null,
+          exists: true,
+        },
+      });
+    } catch (error) {
+      logger.error("SEARCH", "Search user by phone failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      res.status(500).json({
+        error: true,
+        message: "Failed to search user",
+        code: "SEARCH_FAILED",
+      });
+    }
+  }
 }
 
 export default new SearchController();

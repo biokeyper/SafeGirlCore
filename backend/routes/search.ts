@@ -39,4 +39,17 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
+/**
+ * GET /api/search/user-by-phone
+ * Search for user by phone number (for sharing/access grants)
+ * Query: phone (e.g., +256750902921)
+ */
+router.get('/user-by-phone', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await searchController.searchUserByPhone(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

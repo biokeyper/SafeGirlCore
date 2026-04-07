@@ -6,6 +6,7 @@
 import contractManager from "../config/contracts";
 import { ethers } from "ethers";
 import logger from "../utils/logger";
+import retryWithBackoff from "../utils/retryWithBackoff";
 
 interface TransactionResult {
   success: boolean;
@@ -79,20 +80,30 @@ class BlockchainService {
       // Get contract instance
       const contract = contractManager.getContract();
 
-      // Company wallet writes per-user records using a pseudonymous user key
-      const tx = await contract.submitReportFor(
-        userKey,
-        ipfsHash,
-        finalResponses
+      // Submit with retry logic for transient failures
+      const receipt = await retryWithBackoff(
+        async () => {
+          // Company wallet writes per-user records using a pseudonymous user key
+          const tx = await contract.submitReportFor(
+            userKey,
+            ipfsHash,
+            finalResponses
+          );
+
+          logger.info("BLOCKCHAIN", "Transaction sent", {
+            txHash: tx.hash,
+            ipfsHash,
+          });
+
+          // Wait for confirmation (1 block)
+          return await tx.wait(1);
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          operationName: `Submit Report (userId: ${userId})`,
+        }
       );
-
-      logger.info("BLOCKCHAIN", "Transaction sent", {
-        txHash: tx.hash,
-        ipfsHash,
-      });
-
-      // Wait for confirmation (1 block)
-      const receipt = await tx.wait(1);
 
       logger.logBlockchain("Submit Report", "success", {
         txHash: receipt.hash,
@@ -135,13 +146,24 @@ class BlockchainService {
       });
 
       const contract = contractManager.getContract();
-      const tx = await contract.grantAccess(viewerAddress, customExpiry);
 
-      logger.info("BLOCKCHAIN", "Grant access transaction sent", {
-        txHash: tx.hash,
-      });
+      // Grant access with retry logic
+      const receipt = await retryWithBackoff(
+        async () => {
+          const tx = await contract.grantAccess(viewerAddress, customExpiry);
 
-      const receipt = await tx.wait(1);
+          logger.info("BLOCKCHAIN", "Grant access transaction sent", {
+            txHash: tx.hash,
+          });
+
+          return await tx.wait(1);
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          operationName: `Grant Access (viewer: ${viewerAddress})`,
+        }
+      );
 
       logger.logBlockchain("Grant Access", "success", {
         txHash: receipt.hash,
@@ -173,13 +195,24 @@ class BlockchainService {
       });
 
       const contract = contractManager.getContract();
-      const tx = await contract.revokeAccess(viewerAddress);
 
-      logger.info("BLOCKCHAIN", "Revoke access transaction sent", {
-        txHash: tx.hash,
-      });
+      // Revoke access with retry logic
+      const receipt = await retryWithBackoff(
+        async () => {
+          const tx = await contract.revokeAccess(viewerAddress);
 
-      const receipt = await tx.wait(1);
+          logger.info("BLOCKCHAIN", "Revoke access transaction sent", {
+            txHash: tx.hash,
+          });
+
+          return await tx.wait(1);
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          operationName: `Revoke Access (viewer: ${viewerAddress})`,
+        }
+      );
 
       logger.logBlockchain("Revoke Access", "success", {
         txHash: receipt.hash,
@@ -408,13 +441,24 @@ class BlockchainService {
       });
 
       const contract = contractManager.getContract();
-      const tx = await contract.sendPanicAlert(locationData);
 
-      logger.info("BLOCKCHAIN", "Panic alert transaction sent", {
-        txHash: tx.hash,
-      });
+      // Send panic alert with retry logic (CRITICAL - safety)
+      const receipt = await retryWithBackoff(
+        async () => {
+          const tx = await contract.sendPanicAlert(locationData);
 
-      const receipt = await tx.wait(1);
+          logger.info("BLOCKCHAIN", "Panic alert transaction sent", {
+            txHash: tx.hash,
+          });
+
+          return await tx.wait(1);
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 500, // Faster initial retry for panic alerts
+          operationName: 'Send Panic Alert',
+        }
+      );
 
       logger.logBlockchain("Send Panic Alert", "success", {
         txHash: receipt.hash,
