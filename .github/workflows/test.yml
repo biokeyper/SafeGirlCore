@@ -1,0 +1,102 @@
+# ⚠️ NOT READY FOR TESTING YET - COMMENTED OUT
+# This workflow will be enabled once unit/integration tests are set up
+# To enable: remove comments and ensure tests are implemented
+
+# name: Test & Build
+#
+# on:
+#   push:
+#     branches: [main, staging, ft-staging-setup]
+#   pull_request:
+#     branches: [main, staging]
+#
+# jobs:
+#   test:
+#     name: Test, Lint, and Build
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 15
+#
+#     services:
+#       postgres:
+#         image: postgres:15
+#         env:
+#           POSTGRES_USER: safegirl_user
+#           POSTGRES_PASSWORD: safegirl_password
+#           POSTGRES_DB: safegirl_db
+#         options: >-
+#           --health-cmd pg_isready
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
+#         ports:
+#           - 5432:5432
+#
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+#           cache: 'npm'
+#           cache-dependency-path: 'backend/package-lock.json'
+#
+#       - name: Install dependencies
+#         working-directory: backend
+#         run: npm ci
+#
+#       - name: Initialize database
+#         working-directory: backend
+#         env:
+#           DATABASE_URL: postgresql://safegirl_user:safegirl_password@localhost:5432/safegirl_db
+#         run: |
+#           npm run db:init || true
+#           # Initialize schema (if migration script exists)
+#           psql $DATABASE_URL < db/init.sql || true
+#
+#       - name: Run TypeScript type check
+#         working-directory: backend
+#         run: npm run build
+#
+#       - name: Run ESLint
+#         working-directory: backend
+#         run: npm run lint || true
+#         # ESLint not critical if not configured yet
+#
+#       - name: Run tests
+#         working-directory: backend
+#         env:
+#           NODE_ENV: test
+#           DATABASE_URL: postgresql://safegirl_user:safegirl_password@localhost:5432/safegirl_db
+#           JWT_SECRET: test-secret-key-for-ci-12345678901234567890123456
+#           ENCRYPTION_MASTER_KEY: abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789
+#           PRIVATE_KEY: c9245e12074cd98db99dff7a0a537bb3bf278ba136be257698cb451021d327ef
+#           POLYGON_AMOY_RPC_URL: https://rpc-amoy.polygon.technology/
+#           TWILIO_ACCOUNT_SID: ACtest123456789test123456789test123456789
+#           TWILIO_AUTH_TOKEN: test123456789test123456789test123456789test12345
+#           TWILIO_PHONE_NUMBER: +15551234567
+#           EMAIL_FROM: test@example.com
+#           EMAIL_PASSWORD: test-password
+#           PINATA_JWT: test-jwt-token-here
+#           DEPLOYED_CONTRACT_ADDRESS: 0x8C7eC5A70f442Ddd1E002493624e95c4ecFa2Ee6
+#         run: npm test || true
+#         # Tests may not exist yet, so don't fail the build
+#
+#       - name: Build Docker image
+#         working-directory: backend
+#         run: |
+#           docker build -t safegirl-backend:${{ github.sha }} \
+#                        -t safegirl-backend:latest .
+#           echo "✅ Docker build successful"
+#
+#       - name: Summary
+#         run: |
+#           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "✅ Code checked out" >> $GITHUB_STEP_SUMMARY
+#           echo "✅ Dependencies installed" >> $GITHUB_STEP_SUMMARY
+#           echo "✅ TypeScript compiled" >> $GITHUB_STEP_SUMMARY
+#           echo "✅ Docker image built" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "**Next:** Merge PR to staging to trigger deployment" >> $GITHUB_STEP_SUMMARY
