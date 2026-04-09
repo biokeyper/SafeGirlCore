@@ -8,6 +8,7 @@ import logger from '../utils/logger';
 import * as crypto from 'crypto';
 import encryptionService from './encryptionWithRotation';
 import ipfsService from './ipfs';
+import ipfsFallbackService from './ipfsFallback';
 import * as pg from 'pg';
 
 interface Submission {
@@ -377,8 +378,10 @@ class DatabaseService {
         try {
           logger.info('DATABASE', 'Responses/metadata null - fetching from IPFS', { reportId, ipfsHash: submission.ipfshash });
 
-          // Download encrypted data from IPFS
-          const encryptedDataHex = await ipfsService.downloadFromIPFS(submission.ipfshash);
+          // Download encrypted data from IPFS with fallback providers
+          const encryptedBuffer = await ipfsFallbackService.retrieveFromIPFS(submission.ipfshash);
+          // Convert Buffer to hex string for decryption
+          const encryptedDataHex = encryptedBuffer.toString('hex');
 
           // Decrypt the encryption key (note: PostgreSQL returns lowercase column names)
           const reportKey = encryptionService.decryptKey(

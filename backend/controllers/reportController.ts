@@ -5,6 +5,7 @@
 
 import { Response, NextFunction } from 'express';
 import ipfsService from '../services/ipfs';
+import ipfsFallbackService from '../services/ipfsFallback';
 import blockchainService from '../services/blockchain';
 import databaseService from '../services/database';
 import encryptionService from '../services/encryptionWithRotation';
@@ -91,7 +92,7 @@ class ReportController {
         payloadSize: payloadBuffer.length,
       });
 
-      ipfsHash = await (ipfsService as any).uploadToIPFS(
+      ipfsHash = await ipfsFallbackService.uploadToIPFS(
         payloadBuffer,
         `report_${reportId}.bin`,
       );
@@ -109,7 +110,7 @@ class ReportController {
           mimeType: audioFile.mimetype,
         });
 
-        audioIpfsHash = await (ipfsService as any).uploadToIPFS(
+        audioIpfsHash = await ipfsFallbackService.uploadToIPFS(
           audioFile.buffer,
           `audio_${reportId}.m4a`,
         );

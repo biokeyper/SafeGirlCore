@@ -8,6 +8,7 @@ import blockchainService from "../services/blockchain";
 import databaseService from "../services/database";
 import emailService from "../services/email";
 import smsBatchProcessor from "../services/smsBatchProcessor";
+import bullMqPanicAlertProcessor from "../services/bullMqPanicAlertProcessor";
 import logger from "../utils/logger";
 
 class PanicController {
@@ -144,15 +145,25 @@ class PanicController {
         },
       });
 
-      // ========== STEP 3: Process blockchain + SMS in background (non-blocking) ==========
+      // ========== STEP 3: Queue background processing via BullMQ (with retry) ==========
       if (alertId !== null) {
-        this.processPanicAlertBackground(userId, locationData, alertId).catch(
+        bullMqPanicAlertProcessor.queuePanicAlert(userId, locationData, alertId as number).catch(
           (err: Error) => {
-            logger.error("PANIC", "Background processing failed", {
+            logger.error("PANIC", "Failed to queue background processing", {
               userId,
               alertId,
               error: err.message,
             });
+            // Fallback: still try to process directly (non-retryable, but immediate)
+            this.processPanicAlertBackground(userId, locationData, alertId as number).catch(
+              (fallbackErr: Error) => {
+                logger.error("PANIC", "Fallback background processing failed", {
+                  userId,
+                  alertId,
+                  error: fallbackErr.message,
+                });
+              }
+            );
           }
         );
       }

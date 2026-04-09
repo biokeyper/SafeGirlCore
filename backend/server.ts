@@ -11,7 +11,11 @@ import contractManager from "./config/contracts";
 import eventListener from "./services/eventListener";
 import ipfsService from "./services/ipfs";
 import databaseService from "./services/database";
-import { start as startConfirmationScheduler, stop as stopConfirmationScheduler } from "./services/confirmationScheduler";
+import bullMqService from "./services/bullMqService";
+import bullMqConfirmationScheduler from "./services/bullMqConfirmationScheduler";
+import bullMqSmsBatchProcessor from "./services/bullMqSmsBatchProcessor";
+import bullMqSmsRetryProcessor from "./services/bullMqSmsRetryProcessor";
+import bullMqPanicAlertProcessor from "./services/bullMqPanicAlertProcessor";
 
 import reportRoutes from "./routes/reports";
 import authRoutes from "./routes/auth";
@@ -21,18 +25,19 @@ import panicRoutes from "./routes/panic";
 import emergencyRoutes from "./routes/emergency";
 import searchRoutes from "./routes/search";
 import notificationRoutes from "./routes/notifications";
+import jobQueueRoutes from "./routes/jobQueue";
+import userProfileRoutes from "./routes/userProfile";
 import emailService from "./services/email";
 import smsRetryProcessor from "./services/smsRetryProcessor";
 import smsBatchProcessor from "./services/smsBatchProcessor";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { requestLogger, errorLogger } from "./middleware/requestLogger";
 
 const app: Express = express();
 const PORT = process.env.PORT || 3001;
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  logger.logRequest(req.method, req.path);
-  next();
-});
+// Structured request/response logging with request IDs
+app.use(requestLogger);
 
 // Security headers middleware
 app.use(helmet({
@@ -126,15 +131,56 @@ async function initializeServices(): Promise<boolean> {
       );
     }
 
-    // 5. Start confirmation scheduler (updates pending reports and marks confirmed)
-    logger.logServer("Starting confirmation scheduler...");
-    startConfirmationScheduler();
+    // 5. Initialize BullMQ (Redis-backed job queues)
+    logger.logServer("Initializing BullMQ job queues...");
+    const bullMqInitialized = await bullMqService.initialize();
+    if (!bullMqInitialized) {
+      logger.warn(
+        "SERVER",
+        "BullMQ initialization warning - job queues not available (falling back to setInterval)",
+      );
+    }
 
-    // 6. Start SMS retry processor (handles failed emergency contact alerts)
-    logger.logServer("Starting SMS retry processor...");
-    smsRetryProcessor.start();
+    // 6. Initialize and start BullMQ confirmation scheduler
+    if (bullMqInitialized) {
+      logger.logServer("Starting BullMQ confirmation scheduler...");
+      await bullMqConfirmationScheduler.initialize();
+      await bullMqConfirmationScheduler.start();
+    } else {
+      // Fallback to old setInterval-based scheduler
+      logger.logServer("Starting confirmation scheduler (fallback)...");
+      const { start: startConfirmationScheduler } = await import("./services/confirmationScheduler");
+      startConfirmationScheduler();
+    }
 
-    // 7. Start event listener (disabled - using database logging instead of blockchain filters)
+    // 7. Initialize and start BullMQ SMS batch processor
+    if (bullMqInitialized) {
+      logger.logServer("Starting BullMQ SMS batch processor...");
+      await bullMqSmsBatchProcessor.initialize();
+      await bullMqSmsBatchProcessor.start();
+    } else {
+      // Fallback to old timer-based processor
+      logger.logServer("Starting SMS batch processor (fallback)...");
+    }
+
+    // 8. Initialize and start BullMQ SMS retry processor
+    if (bullMqInitialized) {
+      logger.logServer("Starting BullMQ SMS retry processor...");
+      await bullMqSmsRetryProcessor.initialize();
+      await bullMqSmsRetryProcessor.start();
+    } else {
+      // Fallback to old setInterval-based processor
+      logger.logServer("Starting SMS retry processor (fallback)...");
+      smsRetryProcessor.start();
+    }
+
+    // 9. Initialize BullMQ panic alert processor
+    if (bullMqInitialized) {
+      logger.logServer("Initializing BullMQ panic alert processor...");
+      await bullMqPanicAlertProcessor.initialize();
+    }
+
+    // 10. Start event listener (disabled - using database logging instead of blockchain filters)
     // logger.logServer('Starting event listener...');
     // await eventListener.startListening();
 
@@ -158,6 +204,8 @@ app.use("/api/panic-alert", panicRoutes);
 app.use("/api/emergency", emergencyRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/user/profile", userProfileRoutes);
+app.use("/api/jobs", jobQueueRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   logger.logRequest("GET", "/");
@@ -274,6 +322,9 @@ app.get("/api/health", async (req: Request, res: Response) => {
 });
 
 app.use(notFoundHandler);
+
+// Error logging middleware (logs unhandled errors with request context)
+app.use(errorLogger);
 
 app.use(errorHandler);
 
@@ -430,9 +481,21 @@ async function startServer(): Promise<void> {
 // Handle graceful shutdown
 process.on("SIGINT", async () => {
   logger.logServer("Shutdown signal received...");
+
+  // Close BullMQ services
+  await bullMqConfirmationScheduler.stop();
+  await bullMqSmsBatchProcessor.stop();
+  await bullMqSmsBatchProcessor.flushBatchImmediate();
+  await bullMqSmsRetryProcessor.stop();
+  await bullMqPanicAlertProcessor.stop();
+  await bullMqService.close();
+
+  // Fallback to old services if BullMQ wasn't available
+  const { stop: stopConfirmationScheduler } = await import("./services/confirmationScheduler");
   stopConfirmationScheduler();
   smsRetryProcessor.stop();
   await smsBatchProcessor.flushBatchImmediate();
+
   eventListener.stopListening();
   await databaseService.close();
   logger.logServer("Server stopped");
@@ -441,9 +504,21 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   logger.logServer("Termination signal received...");
+
+  // Close BullMQ services
+  await bullMqConfirmationScheduler.stop();
+  await bullMqSmsBatchProcessor.stop();
+  await bullMqSmsBatchProcessor.flushBatchImmediate();
+  await bullMqSmsRetryProcessor.stop();
+  await bullMqPanicAlertProcessor.stop();
+  await bullMqService.close();
+
+  // Fallback to old services if BullMQ wasn't available
+  const { stop: stopConfirmationScheduler } = await import("./services/confirmationScheduler");
   stopConfirmationScheduler();
   smsRetryProcessor.stop();
   await smsBatchProcessor.flushBatchImmediate();
+
   eventListener.stopListening();
   await databaseService.close();
   logger.logServer("Server stopped");

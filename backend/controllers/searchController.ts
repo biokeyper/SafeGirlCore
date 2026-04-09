@@ -47,12 +47,33 @@ class SearchController {
         return;
       }
 
-      // Validate limit (max 100 results per page)
+      // Validate and enforce pagination limits to prevent DoS
+      // Max 100 results per page (prevents requesting massive datasets)
       const parsedLimit = Math.min(
         parseInt(limit as string) || 10,
         100
       );
-      const parsedOffset = Math.max(parseInt(offset as string) || 0, 0);
+      // Max offset 100k (prevents scanning entire database)
+      const parsedOffset = Math.min(
+        Math.max(parseInt(offset as string) || 0, 0),
+        100000
+      );
+
+      // Warn if client tries to exceed limits
+      if ((limit as string) && parseInt(limit as string) > 100) {
+        logger.warn('SEARCH', 'Limit exceeded, capped to 100', {
+          userId,
+          requestedLimit: parseInt(limit as string),
+          appliedLimit: parsedLimit,
+        });
+      }
+      if ((offset as string) && parseInt(offset as string) > 100000) {
+        logger.warn('SEARCH', 'Offset exceeded, capped to 100000', {
+          userId,
+          requestedOffset: parseInt(offset as string),
+          appliedOffset: parsedOffset,
+        });
+      }
 
       // Build filter conditions
       const filters: Record<string, any> = {
@@ -247,9 +268,9 @@ class SearchController {
       // Normalize phone (ensure E.164 format)
       const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
 
-      // Search for user by phone
+      // Search for user by phone (with profile info)
       const result = await (databaseService as any).query(
-        `SELECT userid, phone, username
+        `SELECT userid, phone, username, profilePicture
          FROM users
          WHERE phone = $1
          LIMIT 1`,
@@ -285,6 +306,7 @@ class SearchController {
           userId: user.userid,
           phone: user.phone,
           username: user.username || null,
+          profilePicture: user.profilepicture || null,
           exists: true,
         },
       });

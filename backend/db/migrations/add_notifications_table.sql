@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   readAt TIMESTAMP,
 
-  FOREIGN KEY (userId) REFERENCES users(userId)
+  FOREIGN KEY (userId) REFERENCES users(userId) ON DELETE CASCADE
 );
 
 -- Create indexes for fast lookups
